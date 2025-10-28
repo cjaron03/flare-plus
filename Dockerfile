@@ -1,23 +1,30 @@
 # multi-stage docker build for flare-plus
+# optimized with uv for faster dependency installation
 
 # stage 1: builder
-FROM python:3.10-slim as builder
+FROM python:3.9-slim AS builder
 
 WORKDIR /build
 
-# install build dependencies
+# install build dependencies and uv
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
 
-# copy requirements and install dependencies
+# create virtualenv
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# copy and install runtime dependencies only
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN uv pip install --no-cache -r requirements.txt
 
 # stage 2: runtime
-FROM python:3.10-slim
+FROM python:3.9-slim
 
 # metadata
 ARG BUILD_DATE
@@ -40,8 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# copy python packages from builder
-COPY --from=builder /root/.local /root/.local
+# copy virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
 
 # copy application code
 COPY src/ ./src/
@@ -49,18 +56,23 @@ COPY scripts/ ./scripts/
 COPY config.yaml ./
 COPY pyproject.toml ./
 
-# make sure scripts are executable
-RUN chmod +x scripts/*.py
+# create data directories
+RUN mkdir -p /app/data/cache /app/models
 
-# create non-root user
+# create non-root user and set ownership
 RUN useradd -m -u 1000 flareuser && \
     chown -R flareuser:flareuser /app
 
+# make scripts executable
+RUN chmod +x scripts/*.py
+
 USER flareuser
 
-# set python path
-ENV PATH=/root/.local/bin:$PATH
-ENV PYTHONPATH=/app
+# set environment
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/app" \
+    VIRTUAL_ENV="/opt/venv" \
+    PYTHONUNBUFFERED="1"
 
 # health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -68,4 +80,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # default command
 CMD ["python", "-m", "src"]
-

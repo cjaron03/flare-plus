@@ -1,13 +1,14 @@
 # local development guide
 
-this guide covers running flare-plus locally using docker compose.
+this guide covers running flare-plus locally using docker compose or native python.
 
 ## prerequisites
 
-- docker and docker-compose installed
+- docker and docker-compose installed (for docker method)
+- python 3.9+ installed (for native method)
 - make (optional, but recommended)
 
-## quick start
+## quick start with docker
 
 ### option 1: using make (recommended)
 
@@ -53,9 +54,79 @@ docker-compose exec app python scripts/run_ingestion.py
 docker-compose down
 ```
 
+## native development (without docker)
+
+### setup with uv (recommended for speed)
+
+```bash
+# install uv
+pip install uv
+
+# install runtime dependencies only
+uv pip install -r requirements.txt
+
+# or install dev dependencies for testing
+uv pip install -r requirements-dev.txt
+
+# set up local postgres (macos)
+brew install postgresql@14
+brew services start postgresql@14
+
+# create database
+createdb flare_prediction
+
+# set environment variables
+export DB_HOST=localhost
+export DB_PORT=5432
+export DB_NAME=flare_prediction
+export DB_USER=your_username
+export DB_PASSWORD=
+
+# initialize database
+python scripts/init_db.py
+
+# run data ingestion
+python scripts/run_ingestion.py
+
+# run tests
+pytest tests/ -v
+```
+
+### traditional pip setup
+
+```bash
+# create virtual environment
+python3.9 -m venv venv
+source venv/bin/activate
+
+# install dependencies
+pip install -r requirements-dev.txt
+
+# follow same setup steps as above
+```
+
+## dependency management
+
+### requirements files
+
+- `requirements.txt` - runtime dependencies only (used in docker image)
+- `requirements-dev.txt` - includes runtime + development/testing tools
+
+### updating dependencies
+
+```bash
+# with uv (faster)
+uv pip install package_name
+uv pip freeze > requirements.txt
+
+# traditional pip
+pip install package_name
+pip freeze > requirements.txt
+```
+
 ## services
 
-the docker-compose setup includes:
+### docker-compose setup includes:
 
 - **postgres** - postgresql 14 database
   - accessible at `localhost:5432`
@@ -136,6 +207,8 @@ python -c "from src.data.fetchers import XRayFluxFetcher; print('works!')"
 
 ## testing
 
+### with docker
+
 ```bash
 # run all tests
 make test
@@ -147,14 +220,33 @@ docker-compose exec app pytest tests/test_database.py -v
 docker-compose exec app pytest tests/ -v --cov=src --cov-report=term-missing
 ```
 
+### native (faster for development)
+
+```bash
+# set up test database
+createdb flare_prediction_test
+
+# export test environment
+export DB_NAME=flare_prediction_test
+
+# run tests
+pytest tests/ -v
+
+# with coverage
+pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=80
+```
+
 ## linting and formatting
 
 ```bash
-# check formatting
+# with docker
 make lint
-
-# auto-format code
 make format
+
+# native
+flake8 src/
+black src/
+mypy src/ --ignore-missing-imports
 ```
 
 ## cleaning up
@@ -166,6 +258,16 @@ make down
 # stop services and remove volumes (clean slate)
 make clean
 ```
+
+## docker optimization
+
+the dockerfile uses several optimizations:
+
+- **uv** for 10-100x faster dependency installation
+- **multi-stage build** to keep final image small
+- **virtualenv** at `/opt/venv` for clean python environment
+- **runtime-only dependencies** in the image (no dev tools)
+- **non-root user** for security
 
 ## troubleshooting
 
@@ -194,7 +296,7 @@ docker-compose build --no-cache
 
 ### port conflicts
 
-if ports 5432 is already in use, update `.env`:
+if port 5432 is already in use, update `.env`:
 
 ```bash
 DB_PORT=5433
@@ -206,34 +308,29 @@ then restart:
 make down && make up
 ```
 
-## local development without docker
+### slow dependency installs
 
-if you prefer not to use docker:
+switch to uv for much faster installs:
 
 ```bash
-# install dependencies
-make local-install
+# install uv
+pip install uv
 
-# set up local postgres (macos)
-brew install postgresql@14
-brew services start postgresql@14
-
-# create database
-createdb flare_prediction
-
-# set environment variables
-export DB_HOST=localhost
-export DB_PORT=5432
-export DB_NAME=flare_prediction
-export DB_USER=your_username
-export DB_PASSWORD=
-
-# initialize database
-python scripts/init_db.py
-
-# run tests
-make local-test
+# use uv for installs
+uv pip install -r requirements-dev.txt
 ```
+
+## ci/cd integration
+
+the optimized ci/cd workflows use:
+
+- **uv** for faster dependency installation in ci
+- **pip caching** via actions/setup-python
+- **concurrency cancellation** to stop outdated workflow runs
+- **split test matrix** - lint runs once on 3.9, tests run on 3.9/3.10/3.11
+- **docker caching** via github actions cache
+- **pr builds** validate but don't push images
+- **main/tag pushes** build and publish to ghcr.io
 
 ## available make commands
 
@@ -254,4 +351,3 @@ make clean      - remove containers and volumes
 make init-db    - initialize database
 make ingest     - run data ingestion
 ```
-
