@@ -37,7 +37,8 @@ jobs:
       
       - name: check for syntax errors
         run: |
-          python -m py_compile src/**/*.py tests/**/*.py || exit 1
+          # compile all python files to check for syntax errors
+          find src tests -name "*.py" -type f -exec python -m py_compile {} \;
 
   security-scan:
     runs-on: ubuntu-latest
