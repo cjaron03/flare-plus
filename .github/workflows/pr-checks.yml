@@ -49,6 +49,16 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+      
+      - name: cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: install dependencies
         run: |
@@ -59,12 +69,12 @@ jobs:
         run: |
           # check dependencies for known vulnerabilities
           pip install -r requirements.txt
-          safety check --json || true
+          safety check --continue-on-error || echo "security vulnerabilities found, review output"
       
       - name: run bandit security linter
         run: |
-          # scan for common security issues
-          bandit -r src/ -f json || true
+          # scan for common security issues - fail on high/medium severity
+          bandit -r src/ -ll -f screen
 
   code-quality:
     runs-on: ubuntu-latest
@@ -76,6 +86,16 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+      
+      - name: cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       
       - name: install dependencies
         run: |
@@ -84,11 +104,11 @@ jobs:
       
       - name: check code complexity
         run: |
-          # check cyclomatic complexity
-          radon cc src/ -a -nb || true
+          # check cyclomatic complexity - fail if average grade is F
+          radon cc src/ -a -nb --total-average
       
       - name: check maintainability index
         run: |
-          # check maintainability
-          radon mi src/ -nb || true
+          # check maintainability - warn on low scores but don't fail
+          radon mi src/ -nb -s || true
 

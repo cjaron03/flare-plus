@@ -1,0 +1,63 @@
+# git
+.git/
+.gitignore
+.github/
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# documentation
+docs/
+*.md
+README.md
+
+# ci/cd
+.github/
+
+# local development
+.env
+.env.local
+*.log
+data/
+models/
+notebooks/
+
+# macos
+.DS_Store
+
