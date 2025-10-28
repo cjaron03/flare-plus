@@ -1,0 +1,3 @@
+# ci/cd workflows will go here
+# see docs/ci_cd_plan.md for planned automation
+
