@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
 
@@ -41,7 +41,7 @@ class Database:
             
             # test connection
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             
             self.session_factory = sessionmaker(bind=self.engine)
             logger.info("database connection established")

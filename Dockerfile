@@ -40,8 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# copy python packages from builder
-COPY --from=builder /root/.local /root/.local
+# create non-root user first
+RUN useradd -m -u 1000 flareuser
+
+# copy python packages from builder to user home
+COPY --from=builder /root/.local /home/flareuser/.local
 
 # copy application code
 COPY src/ ./src/
@@ -49,17 +52,15 @@ COPY scripts/ ./scripts/
 COPY config.yaml ./
 COPY pyproject.toml ./
 
-# make sure scripts are executable
-RUN chmod +x scripts/*.py
-
-# create non-root user
-RUN useradd -m -u 1000 flareuser && \
-    chown -R flareuser:flareuser /app
+# create data directories and set permissions
+RUN mkdir -p /app/data/cache /app/models && \
+    chmod +x scripts/*.py && \
+    chown -R flareuser:flareuser /app /home/flareuser/.local
 
 USER flareuser
 
 # set python path
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/home/flareuser/.local/bin:$PATH
 ENV PYTHONPATH=/app
 
 # health check
