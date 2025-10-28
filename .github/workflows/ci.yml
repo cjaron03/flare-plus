@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flare_prediction_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: lint with flake8
+        run: |
+          # stop the build if there are python syntax errors or undefined names
+          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings, ignore line length for now
+          flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+      
+      - name: check code formatting with black
+        run: |
+          black --check src/
+      
+      - name: run tests
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: flare_prediction_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: |
+          pytest tests/ -v --cov=src --cov-report=term-missing
+      
+      - name: test database initialization
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: flare_prediction_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: |
+          python scripts/init_db.py <<< "n"
+
+  data-quality-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: test noaa endpoints accessibility
+        run: |
+          python -c "
+import requests
+import sys
+
+endpoints = [
+    'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
+    'https://services.swpc.noaa.gov/json/solar_regions.json'
+]
+
+failed = []
+for url in endpoints:
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        print(f'✓ {url}')
+    except Exception as e:
+        print(f'✗ {url}: {e}')
+        failed.append(url)
+
+if failed:
+    print(f'\n{len(failed)} endpoint(s) failed')
+    sys.exit(1)
+else:
+    print(f'\nall {len(endpoints)} endpoints accessible')
+          "
+

@@ -1,0 +1,94 @@
+name: pull request checks
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: check commit message format
+        run: |
+          # check that commits follow lowercase convention
+          git log origin/main..HEAD --format=%s | while read msg; do
+            if echo "$msg" | grep -E '^[A-Z]' > /dev/null; then
+              echo "error: commit message should be lowercase: '$msg'"
+              exit 1
+            fi
+          done
+      
+      - name: check for large files
+        run: |
+          # prevent accidentally committing large files
+          find . -type f -size +5M | grep -v '.git' | while read file; do
+            echo "error: large file detected: $file"
+            exit 1
+          done || true
+      
+      - name: validate python syntax
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: check for syntax errors
+        run: |
+          python -m py_compile src/**/*.py tests/**/*.py || exit 1
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety bandit
+      
+      - name: check for known security vulnerabilities
+        run: |
+          # check dependencies for known vulnerabilities
+          pip install -r requirements.txt
+          safety check --json || true
+      
+      - name: run bandit security linter
+        run: |
+          # scan for common security issues
+          bandit -r src/ -f json || true
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black pylint radon
+      
+      - name: check code complexity
+        run: |
+          # check cyclomatic complexity
+          radon cc src/ -a -nb || true
+      
+      - name: check maintainability index
+        run: |
+          # check maintainability
+          radon mi src/ -nb || true
+
