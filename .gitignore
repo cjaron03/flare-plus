@@ -1,0 +1,58 @@
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# environment
+.env
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# data
+data/cache/
+data/raw/
+*.parquet
+*.csv
+
+# models
+models/artifacts/
+*.pkl
+*.joblib
+
+# logs
+logs/
+*.log
+
+# testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macos
+.DS_Store
+
