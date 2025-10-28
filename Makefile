@@ -1,6 +1,6 @@
 # flare+ makefile for common development tasks
 
-.PHONY: help build up down logs shell db-shell test lint format clean
+.PHONY: help build up down logs shell db-shell test lint format clean init-db ingest
 
 help:
 	@echo "flare+ development commands:"
@@ -23,8 +23,7 @@ build:
 up:
 	docker-compose up -d
 	@echo "services started!"
-	@echo "streamlit ui: http://localhost:8501"
-	@echo "flask api: http://localhost:5000"
+	@echo "postgres: localhost:5432"
 
 down:
 	docker-compose down
@@ -59,8 +58,11 @@ ingest:
 	docker-compose exec app python scripts/run_ingestion.py
 
 # local development (without docker)
+.PHONY: local-install local-test local-lint local-format
+
 local-install:
-	pip install -r requirements.txt
+	pip install uv
+	uv pip install -r requirements-dev.txt
 
 local-test:
 	pytest tests/ -v
@@ -71,4 +73,3 @@ local-lint:
 
 local-format:
 	black src/ tests/
-
