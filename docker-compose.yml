@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: flare-plus-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-flare_prediction}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - flare-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flare-plus-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # database connection
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-flare_prediction}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      
+      # data ingestion settings
+      DATA_CACHE_HOURS: ${DATA_CACHE_HOURS:-48}
+      UPDATE_INTERVAL_MINUTES: ${UPDATE_INTERVAL_MINUTES:-60}
+      BACKFILL_START_DATE: ${BACKFILL_START_DATE:-2023-01-01}
+      
+      # python settings
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./src:/app/src
+      - ./config.yaml:/app/config.yaml
+      - ./scripts:/app/scripts
+      - app_data:/app/data
+      - app_models:/app/models
+    networks:
+      - flare-network
+    command: tail -f /dev/null
+
+volumes:
+  postgres_data:
+    driver: local
+  app_data:
+    driver: local
+  app_models:
+    driver: local
+
+networks:
+  flare-network:
+    driver: bridge
+
