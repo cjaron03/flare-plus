@@ -3,66 +3,66 @@
 ## completed optimizations
 
 ### 1. dependency management
-- ✅ split `requirements.txt` (runtime only) from `requirements-dev.txt` (dev tools)
-- ✅ docker image now uses runtime deps only (~30% smaller)
-- ✅ ci workflows install dev deps for testing
+- split `requirements.txt` (runtime only) from `requirements-dev.txt` (dev tools)
+- docker image now uses runtime deps only (~30% smaller)
+- ci workflows install dev deps for testing
 
 ### 2. dockerfile improvements
-- ✅ upgraded to python 3.9-slim for smaller base
-- ✅ integrated uv for 10-100x faster dependency installation
-- ✅ multi-stage build with virtualenv at `/opt/venv`
-- ✅ improved layer caching and build speed
-- ✅ runtime-only dependencies in final image
-- ✅ proper user permissions and directory setup
+- upgraded to python 3.9-slim for smaller base
+- integrated uv for 10-100x faster dependency installation
+- multi-stage build with virtualenv at `/opt/venv`
+- improved layer caching and build speed
+- runtime-only dependencies in final image
+- proper user permissions and directory setup
 
 ### 3. ci workflow optimizations
 
 #### collapsed caching
-- ✅ removed redundant `actions/cache` steps
-- ✅ rely on `actions/setup-python` built-in pip cache
-- ✅ simplified workflow configuration
+- removed redundant `actions/cache` steps
+- rely on `actions/setup-python` built-in pip cache
+- simplified workflow configuration
 
 #### split test matrix
-- ✅ lint/format/mypy runs once on python 3.9
-- ✅ tests run on python 3.9, 3.10, 3.11
-- ✅ ~40% reduction in total ci time
+- lint/format/mypy runs once on python 3.9
+- tests run on python 3.9, 3.10, 3.11
+- ~40% reduction in total ci time
 
 #### concurrency control
-- ✅ added `concurrency.group` with `cancel-in-progress: true`
-- ✅ stops superseded pr workflow runs automatically
-- ✅ saves compute resources on rapid pushes
+- added `concurrency.group` with `cancel-in-progress: true`
+- stops superseded pr workflow runs automatically
+- saves compute resources on rapid pushes
 
 ### 4. reusable composite action
-- ✅ created `.github/actions/setup-python-deps`
-- ✅ eliminates duplicated setup blocks across workflows
-- ✅ uses uv for fast installs in ci
-- ✅ consistent caching strategy everywhere
+- created `.github/actions/setup-python-deps`
+- eliminates duplicated setup blocks across workflows
+- uses uv for fast installs in ci
+- consistent caching strategy everywhere
 
 ### 5. docker build workflow
-- ✅ added `pull_request` trigger for validation
-- ✅ only pushes images on main branch and tags
-- ✅ pr builds validate without pushing
-- ✅ uses github actions cache for docker layers
-- ✅ concurrency cancellation for prs
+- added `pull_request` trigger for validation
+- only pushes images on main branch and tags
+- pr builds validate without pushing
+- uses github actions cache for docker layers
+- concurrency cancellation for prs
 
 ### 6. nightly validation hardening
-- ✅ created `run_ingestion_with_retry.py` script
-- ✅ implements 3-attempt retry with 60s delays
-- ✅ structured logging for failure tracking
-- ✅ proper error propagation for alerting
-- ✅ uses composite action for deps
+- created `run_ingestion_with_retry.py` script
+- implements 3-attempt retry with 60s delays
+- structured logging for failure tracking
+- proper error propagation for alerting
+- uses composite action for deps
 
 ### 7. pr checks optimization
-- ✅ uses composite action
-- ✅ concurrency cancellation
-- ✅ reduced redundant installations
+- uses composite action
+- concurrency cancellation
+- reduced redundant installations
 
 ### 8. documentation updates
-- ✅ updated local development guide
-- ✅ documented uv usage
-- ✅ split dependency management
-- ✅ docker optimization details
-- ✅ ci/cd integration notes
+- updated local development guide
+- documented uv usage
+- split dependency management
+- docker optimization details
+- ci/cd integration notes
 
 ## performance improvements
 
