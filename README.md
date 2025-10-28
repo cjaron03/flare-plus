@@ -132,4 +132,3 @@ mit
 ## acknowledgments
 
 data provided by noaa space weather prediction center.
-
