@@ -23,7 +23,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt requirements-dev.txt ./
 
 # install dependencies with uv cache mount for speed
+# force CPU-only packages (no CUDA/GPU dependencies)
 ARG INSTALL_DEV=true
+ENV PIP_ONLY_BINARY=":all:" \
+    PIP_PREFER_BINARY="1"
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$INSTALL_DEV" = "true" ]; then \
       uv pip install -r requirements-dev.txt; \
