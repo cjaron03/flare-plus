@@ -50,9 +50,6 @@ data/
 models/
 notebooks/
 
-# development dependencies (not needed in runtime)
-requirements-dev.txt
-
 # docker
 docker-compose.yml
 Dockerfile
