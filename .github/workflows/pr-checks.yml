@@ -21,6 +21,10 @@ jobs:
       - name: check commit message format
         run: |
           git log origin/main..HEAD --format=%s | while read msg; do
+            # skip merge commits (they start with "Merge")
+            if echo "$msg" | grep -qE '^Merge '; then
+              continue
+            fi
             if echo "$msg" | grep -E '^[A-Z]' > /dev/null; then
               echo "error: commit message should be lowercase: '$msg'"
               exit 1
