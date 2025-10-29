@@ -6,6 +6,10 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:  # allow manual trigger
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   data-ingestion:
     runs-on: ubuntu-latest
@@ -58,7 +62,7 @@ jobs:
         run: |
           python scripts/init_db.py <<< "n"
       
-      - name: run data ingestion
+      - name: run data ingestion with retry
         env:
           DB_HOST: localhost
           DB_PORT: 5432
@@ -66,8 +70,7 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
         run: |
-          python scripts/run_ingestion.py
-        continue-on-error: true
+          python scripts/run_ingestion_with_retry.py
         id: ingestion
       
       - name: validate data freshness

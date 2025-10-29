@@ -1,0 +1,20 @@
+# include runtime dependencies
+-r requirements.txt
+
+# testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# code quality
+black>=23.0.0
+flake8>=6.1.0
+mypy>=1.7.0
+pylint>=3.0.0
+radon>=6.0.0
+isort>=5.13.0
+
+# security
+pre-commit>=3.5.0
+safety>=2.3.0
+bandit>=1.7.0
+

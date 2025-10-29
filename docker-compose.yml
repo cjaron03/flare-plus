@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:14
@@ -45,6 +43,7 @@ services:
       PYTHONUNBUFFERED: 1
     volumes:
       - ./src:/app/src
+      - ./tests:/app/tests
       - ./config.yaml:/app/config.yaml
       - ./scripts:/app/scripts
       - app_data:/app/data

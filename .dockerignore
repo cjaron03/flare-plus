@@ -42,14 +42,6 @@ htmlcov/
 *.swo
 *~
 
-# documentation
-docs/
-*.md
-README.md
-
-# ci/cd
-.github/
-
 # local development
 .env
 .env.local
@@ -58,6 +50,10 @@ data/
 models/
 notebooks/
 
+# docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
 # macos
 .DS_Store
-
