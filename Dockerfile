@@ -1,42 +1,43 @@
 # multi-stage docker build for flare-plus
-# optimized with uv for faster dependency installation
+# optimized with buildkit cache mounts and uv for speed
 
-# stage 1: builder
+# ===== BUILDER STAGE =====
 FROM python:3.9-slim AS builder
 
 WORKDIR /build
 
-# install build dependencies and uv
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
+# install build dependencies with cache mount (no gcc/g++ needed - psycopg2-binary is precompiled)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir uv
 
-# create virtualenv
+# create virtual environment
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# copy and install dependencies
-# for production, use requirements.txt only
-# for local dev with docker-compose, we install dev deps for testing
-ARG INSTALL_DEV=true
+# copy requirements
 COPY requirements.txt requirements-dev.txt ./
-RUN if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install --no-cache -r requirements-dev.txt; \
+
+# install dependencies with uv cache mount for speed
+ARG INSTALL_DEV=true
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$INSTALL_DEV" = "true" ]; then \
+      uv pip install -r requirements-dev.txt; \
     else \
-      uv pip install --no-cache -r requirements.txt; \
+      uv pip install -r requirements.txt; \
     fi
 
-# stage 2: runtime
+# ===== RUNTIME STAGE =====
 FROM python:3.9-slim
 
 # metadata
 ARG BUILD_DATE
 ARG VCS_REF
-ARG VERSION
+ARG VERSION=main
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.authors="flare-plus team" \
@@ -49,38 +50,38 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 
 WORKDIR /app
 
-# install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# install runtime dependencies with cache mount
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-# copy virtualenv from builder
+# copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
-
-# copy application code
-COPY src/ ./src/
-COPY tests/ ./tests/
-COPY scripts/ ./scripts/
-COPY config.yaml ./
-COPY pyproject.toml ./
-
-# create data directories
-RUN mkdir -p /app/data/cache /app/models
-
-# create non-root user and set ownership
-RUN useradd -m -u 1000 flareuser && \
-    chown -R flareuser:flareuser /app
-
-# make scripts executable
-RUN chmod +x scripts/*.py
-
-USER flareuser
 
 # set environment
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app" \
     VIRTUAL_ENV="/opt/venv" \
     PYTHONUNBUFFERED="1"
+
+# copy application code
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY config.yaml pyproject.toml ./
+
+# copy tests directory (for local dev/testing)
+ARG INSTALL_DEV=true
+COPY tests/ ./tests/
+
+# create data directories, non-root user, and set permissions in one layer
+RUN mkdir -p /app/data/cache /app/models && \
+    useradd -m -u 1000 flareuser && \
+    chown -R flareuser:flareuser /app && \
+    chmod +x scripts/*.py
+
+USER flareuser
 
 # health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
