@@ -24,6 +24,7 @@ COPY requirements.txt requirements-dev.txt ./
 
 # install dependencies with uv cache mount for speed
 # force CPU-only packages (no CUDA/GPU dependencies)
+# cache bust: 2025-10-29
 ARG INSTALL_DEV=true
 ENV PIP_ONLY_BINARY=":all:" \
     PIP_PREFER_BINARY="1"
