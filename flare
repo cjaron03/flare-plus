@@ -1,6 +1,10 @@
 #!/bin/bash
 # flare+ helper script - wrapper around docker-compose
 
+# enable docker buildkit for faster builds with cache mounts
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 case "$1" in
   up)
     docker-compose up -d
