@@ -6,10 +6,13 @@ FROM python:3.9-slim AS builder
 
 WORKDIR /build
 
-# install build dependencies with cache mount (no gcc/g++ needed - psycopg2-binary is precompiled)
+# install build dependencies with cache mount (gcc/g++ needed for xgboost cpu-only build)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    cmake \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -23,13 +26,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt requirements-dev.txt ./
 
 # install dependencies with uv cache mount for speed
-# force linux platform to avoid cuda variants
+# build xgboost from source with cpu-only to avoid 500mb cuda wheels
 ARG INSTALL_DEV=true
+ENV CMAKE_ARGS="-DUSE_CUDA=OFF"
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install -r requirements-dev.txt --python-platform linux; \
+      uv pip install --no-binary xgboost -r requirements-dev.txt; \
     else \
-      uv pip install -r requirements.txt --python-platform linux; \
+      uv pip install --no-binary xgboost -r requirements.txt; \
     fi
 
 # ===== RUNTIME STAGE =====
@@ -51,11 +55,13 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 
 WORKDIR /app
 
-# install runtime dependencies with cache mount
+# install runtime dependencies with cache mount (libgomp1 needed for compiled xgboost)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libgomp1 \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # copy virtual environment from builder
