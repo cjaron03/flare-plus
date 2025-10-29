@@ -6,12 +6,13 @@ FROM python:3.9-slim AS builder
 
 WORKDIR /build
 
-# install build dependencies with cache mount (gcc/g++ needed for xgboost cpu-only build)
+# install build dependencies with cache mount (gcc/g++/make needed for xgboost cpu-only build)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    make \
     cmake \
     libpq-dev \
     curl \
