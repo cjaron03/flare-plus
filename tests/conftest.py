@@ -12,9 +12,11 @@ from src.data.database import Database
 @pytest.fixture(scope="session")
 def test_db_engine():
     """create test database engine."""
+    # use DB_HOST from env (set to 'postgres' in docker-compose)
+    db_host = os.getenv("DB_HOST", "localhost")
     db_url = os.getenv(
         "TEST_DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/flare_prediction_test"
+        f"postgresql://postgres:postgres@{db_host}:5432/flare_prediction_test"
     )
     engine = create_engine(db_url)
     
