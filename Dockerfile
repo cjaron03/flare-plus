@@ -19,9 +19,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# copy and install runtime dependencies only
-COPY requirements.txt .
-RUN uv pip install --no-cache -r requirements.txt
+# copy and install dependencies
+# for production, use requirements.txt only
+# for local dev with docker-compose, we install dev deps for testing
+ARG INSTALL_DEV=true
+COPY requirements.txt requirements-dev.txt ./
+RUN if [ "$INSTALL_DEV" = "true" ]; then \
+      uv pip install --no-cache -r requirements-dev.txt; \
+    else \
+      uv pip install --no-cache -r requirements.txt; \
+    fi
 
 # stage 2: runtime
 FROM python:3.9-slim
