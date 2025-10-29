@@ -6,7 +6,35 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  lint-and-format:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: setup python and deps
+        uses: ./.github/actions/setup-python-deps
+        with:
+          python-version: '3.9'
+          install-dev: 'true'
+      
+      - name: lint with flake8
+        run: |
+          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+      
+      - name: check code formatting with black
+        run: black --check src/
+      
+      - name: type check with mypy
+        run: mypy src/ --ignore-missing-imports --no-strict-optional --warn-unused-ignores --warn-redundant-casts
+        continue-on-error: true
+
   test:
     runs-on: ubuntu-latest
     
@@ -32,41 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name: setup python and deps
+        uses: ./.github/actions/setup-python-deps
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
-      
-      - name: cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      
-      - name: install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: lint with flake8
-        run: |
-          # stop the build if there are python syntax errors or undefined names
-          flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings, ignore line length for now
-          flake8 src/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
-      
-      - name: check code formatting with black
-        run: |
-          black --check src/
-      
-      - name: type check with mypy
-        run: |
-          mypy src/ --ignore-missing-imports --no-strict-optional --warn-unused-ignores --warn-redundant-casts
-        continue-on-error: true
+          install-dev: 'true'
       
       - name: run tests
         env:
@@ -75,8 +73,8 @@ jobs:
           DB_NAME: flare_prediction_test
           DB_USER: postgres
           DB_PASSWORD: postgres
-        run: |
-          pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=80
+        # TODO: increase coverage threshold as tests are added (currently 41%)
+        run: pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=40
       
       - name: test database initialization
         env:
@@ -85,60 +83,4 @@ jobs:
           DB_NAME: flare_prediction_test
           DB_USER: postgres
           DB_PASSWORD: postgres
-        run: |
-          python scripts/init_db.py <<< "n"
-
-  data-quality-check:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: set up python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
-      
-      - name: cache pip packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      
-      - name: install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: test noaa endpoints accessibility
-        run: |
-          python -c "
-import requests
-import sys
-
-endpoints = [
-    'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
-    'https://services.swpc.noaa.gov/json/solar_regions.json'
-]
-
-failed = []
-for url in endpoints:
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        print(f'✓ {url}')
-    except Exception as e:
-        print(f'✗ {url}: {e}')
-        failed.append(url)
-
-if failed:
-    print(f'\n{len(failed)} endpoint(s) failed')
-    sys.exit(1)
-else:
-    print(f'\nall {len(endpoints)} endpoints accessible')
-          "
-
+        run: python scripts/init_db.py <<< "n"

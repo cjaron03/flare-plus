@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.data.schema import Base
@@ -12,9 +12,28 @@ from src.data.database import Database
 @pytest.fixture(scope="session")
 def test_db_engine():
     """create test database engine."""
+    # use DB_HOST from env (set to 'postgres' in docker-compose)
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_name = "flare_prediction_test"
+    
+    # first connect to default postgres db to create test db if needed
+    admin_url = f"postgresql://postgres:postgres@{db_host}:5432/postgres"
+    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    
+    # create test database if it doesn't exist
+    with admin_engine.connect() as conn:
+        result = conn.execute(
+            text(f"SELECT 1 FROM pg_database WHERE datname='{db_name}'")
+        )
+        if not result.fetchone():
+            conn.execute(text(f"CREATE DATABASE {db_name}"))
+    
+    admin_engine.dispose()
+    
+    # now connect to test database
     db_url = os.getenv(
         "TEST_DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/flare_prediction_test"
+        f"postgresql://postgres:postgres@{db_host}:5432/{db_name}"
     )
     engine = create_engine(db_url)
     

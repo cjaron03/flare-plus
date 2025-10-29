@@ -1,0 +1,65 @@
+#!/bin/bash
+# flare+ helper script - wrapper around docker-compose
+
+case "$1" in
+  up)
+    docker-compose up -d
+    echo "services started!"
+    echo "postgres: localhost:5432"
+    ;;
+  down)
+    docker-compose down
+    ;;
+  logs)
+    docker-compose logs -f
+    ;;
+  build)
+    docker-compose build
+    ;;
+  shell)
+    docker-compose exec app /bin/bash
+    ;;
+  db-shell)
+    docker-compose exec postgres psql -U postgres -d flare_prediction
+    ;;
+  init-db)
+    docker-compose exec app python scripts/init_db.py
+    ;;
+  ingest)
+    docker-compose exec app python scripts/run_ingestion.py
+    ;;
+  test)
+    docker-compose exec app pytest tests/ -v
+    ;;
+  lint)
+    docker-compose exec app flake8 src/ tests/
+    docker-compose exec app black --check src/ tests/
+    ;;
+  format)
+    docker-compose exec app black src/ tests/
+    ;;
+  clean)
+    docker-compose down -v
+    docker system prune -f
+    ;;
+  *)
+    echo "flare+ development helper"
+    echo ""
+    echo "usage: ./flare <command>"
+    echo ""
+    echo "commands:"
+    echo "  up         start all services"
+    echo "  down       stop all services"
+    echo "  logs       view logs"
+    echo "  build      build docker images"
+    echo "  shell      open shell in app container"
+    echo "  db-shell   open psql shell"
+    echo "  init-db    initialize database"
+    echo "  ingest     run data ingestion"
+    echo "  test       run tests"
+    echo "  lint       run linters"
+    echo "  format     format code"
+    echo "  clean      remove containers and volumes"
+    ;;
+esac
+

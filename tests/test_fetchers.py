@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 import pandas as pd
+import requests
 
 from src.data.fetchers import NOAAFetcher, GOESXRayFetcher, SolarRegionFetcher
 
@@ -54,11 +55,13 @@ def test_solar_region_fetcher_with_mock_data(mock_fetch, mock_solar_region_data)
     assert 'timestamp' in result.columns
 
 
-def test_noaa_fetcher_handles_request_failure():
+@patch('requests.Session.get')
+def test_noaa_fetcher_handles_request_failure(mock_get):
     """test that fetcher handles request failures gracefully."""
-    fetcher = NOAAFetcher()
+    # mock a connection error
+    mock_get.side_effect = requests.exceptions.ConnectionError("Connection failed")
     
-    # test with invalid url
+    fetcher = NOAAFetcher()
     result = fetcher.fetch_json("https://invalid-url-that-does-not-exist.com/data")
     
     assert result is None
