@@ -34,9 +34,19 @@ ENV CMAKE_ARGS="-DUSE_CUDA=OFF" \
     FORCE_CUDA=0
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install --no-binary xgboost --python-platform linux -r requirements-dev.txt; \
+      # install numpy/scipy first (xgboost dependencies) \
+      uv pip install --python-platform linux numpy==1.26.4 scipy==1.13.1; \
+      # install xgboost from source without its declared dependencies \
+      uv pip install --no-deps --no-binary xgboost --python-platform linux xgboost==2.1.4; \
+      # install remaining requirements \
+      uv pip install --python-platform linux -r requirements-dev.txt; \
     else \
-      uv pip install --no-binary xgboost --python-platform linux -r requirements.txt; \
+      # install numpy/scipy first (xgboost dependencies) \
+      uv pip install --python-platform linux numpy==1.26.4 scipy==1.13.1; \
+      # install xgboost from source without its declared dependencies \
+      uv pip install --no-deps --no-binary xgboost --python-platform linux xgboost==2.1.4; \
+      # install remaining requirements \
+      uv pip install --python-platform linux -r requirements.txt; \
     fi
 
 # ===== RUNTIME STAGE =====
