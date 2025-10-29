@@ -23,16 +23,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt requirements-dev.txt ./
 
 # install dependencies with uv cache mount for speed
-# force CPU-only packages (no CUDA/GPU dependencies)
-# cache bust: 2025-10-29
+# force linux platform to avoid cuda variants
 ARG INSTALL_DEV=true
-ENV PIP_ONLY_BINARY=":all:" \
-    PIP_PREFER_BINARY="1"
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install -r requirements-dev.txt; \
+      uv pip install -r requirements-dev.txt --python-platform linux; \
     else \
-      uv pip install -r requirements.txt; \
+      uv pip install -r requirements.txt --python-platform linux; \
     fi
 
 # ===== RUNTIME STAGE =====
