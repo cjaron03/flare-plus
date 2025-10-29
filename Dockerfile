@@ -29,12 +29,14 @@ COPY requirements.txt requirements-dev.txt ./
 # install dependencies with uv cache mount for speed
 # build xgboost from source with cpu-only to avoid 500mb cuda wheels
 ARG INSTALL_DEV=true
-ENV CMAKE_ARGS="-DUSE_CUDA=OFF"
+ENV CMAKE_ARGS="-DUSE_CUDA=OFF" \
+    CUDA_VISIBLE_DEVICES="" \
+    FORCE_CUDA=0
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install --no-binary xgboost -r requirements-dev.txt; \
+      uv pip install --no-binary xgboost --python-platform linux -r requirements-dev.txt; \
     else \
-      uv pip install --no-binary xgboost -r requirements.txt; \
+      uv pip install --no-binary xgboost --python-platform linux -r requirements.txt; \
     fi
 
 # ===== RUNTIME STAGE =====
