@@ -1,5 +1,20 @@
 # ci/cd and docker optimization summary
 
+## critical: xgboost cpu-only build
+
+**issue**: xgboost>=2.0.0 on linux pulls prebuilt cuda wheels (~500mb) including nvidia-nccl-cu12 (283mb).
+
+**solution**: build xgboost from source with cuda disabled using `CMAKE_ARGS="-DUSE_CUDA=OFF"` and `--no-binary xgboost`.
+
+**impact**: 
+- reduces image size from ~1.3gb to ~700mb
+- eliminates 500mb of gpu payload
+- compile time: ~3-4 minutes (first build), then cached
+
+**do not**: remove `CMAKE_ARGS`, remove `--no-binary xgboost`, or pin to prebuilt xgboost wheels. this will reintroduce cuda bloat.
+
+---
+
 ## completed optimizations
 
 ### 1. dependency management
