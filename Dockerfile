@@ -59,6 +59,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 # copy application code
 COPY src/ ./src/
+COPY tests/ ./tests/
 COPY scripts/ ./scripts/
 COPY config.yaml ./
 COPY pyproject.toml ./
