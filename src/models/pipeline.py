@@ -246,18 +246,18 @@ class ClassificationPipeline:
 
                     # log key metrics
                     logger.info(f"\n{model_type} results:")
-            logger.info(
-                f"  cv accuracy: {training_info['cv_mean']:.4f} (+/- {training_info['cv_std']*2:.4f})"
-            )
-            logger.info(
-                f"  test accuracy: {evaluation_results['classification_report']['accuracy']:.4f}"
-            )
-            logger.info(
-                f"  macro avg brier score: {evaluation_results['brier_score']['macro_avg']:.4f}"
-            )
-            logger.info(
-                f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}"
-            )
+                    logger.info(
+                        f"  cv accuracy: {training_info['cv_mean']:.4f} (+/- {training_info['cv_std']*2:.4f})"
+                    )
+                    logger.info(
+                        f"  test accuracy: {evaluation_results['classification_report']['accuracy']:.4f}"
+                    )
+                    logger.info(
+                        f"  macro avg brier score: {evaluation_results['brier_score']['macro_avg']:.4f}"
+                    )
+                    logger.info(
+                        f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}"
+                    )
 
                 except Exception as e:
                     logger.error(f"error training/evaluating {model_type}: {e}")
