@@ -56,17 +56,9 @@ jobs:
           - 5432:5432
     
     strategy:
-      # run full matrix on PRs, but only 3.9 on main push (PR already validated)
+      # test all Python versions (uv cache makes this fast)
       matrix:
-        include:
-          - python-version: '3.9'
-          - python-version: '3.10'
-          - python-version: '3.11'
-        exclude:
-          - python-version: '3.10'
-            if: github.event_name != 'pull_request'
-          - python-version: '3.11'
-            if: github.event_name != 'pull_request'
+        python-version: ['3.9', '3.10', '3.11']
     
     steps:
       - uses: actions/checkout@v4
