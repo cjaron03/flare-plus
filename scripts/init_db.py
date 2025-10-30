@@ -27,6 +27,7 @@ def main():
         print("tables created:")
         print("  - flare_goes_xray_flux")
         print("  - flare_solar_regions")
+        print("  - flare_solar_magnetogram")
         print("  - flare_events")
         print("  - flare_ingestion_log")
         

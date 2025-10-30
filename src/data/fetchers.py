@@ -181,24 +181,40 @@ class SolarRegionFetcher(NOAAFetcher):
         try:
             df = pd.DataFrame(data)
 
-            # noaa solar regions format typically includes:
-            # region_number, location, latitude, longitude, area, extent, etc.
+            # noaa solar regions api format:
+            # region, latitude, longitude, location, area, spot_class, extent, number_spots,
+            # mag_class, observed_date, etc.
 
-            # add current timestamp
-            df["timestamp"] = datetime.utcnow()
+            # parse observed_date to timestamp
+            if "observed_date" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["observed_date"])
+            else:
+                df["timestamp"] = datetime.utcnow()
 
-            # normalize column names
-            column_mapping = {
-                "Number": "region_number",
-                "Location": "location",
-                "Carlon": "longitude",
-                "Area": "area",
-                "MagType": "magnetic_type",
-                "Lat": "latitude",
-                "Lon": "longitude",
-            }
+            # copy mag_class to magnetic_type before renaming
+            if "mag_class" in df.columns:
+                df["magnetic_type"] = df["mag_class"]
 
-            df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+            # apply column mappings
+            df = df.rename(
+                columns={
+                    "region": "region_number",
+                    "spot_class": "mcintosh_class",
+                    "mag_class": "mount_wilson_class",
+                    "number_spots": "num_sunspots",
+                }
+            )
+
+            # filter out rows without region_number (required field)
+            initial_count = len(df)
+            df = df[df["region_number"].notna()]
+            filtered_count = len(df)
+            if filtered_count < initial_count:
+                logger.warning(f"filtered out {initial_count - filtered_count} records without region_number")
+
+            # ensure region_number is integer (handle any float values)
+            if len(df) > 0 and "region_number" in df.columns:
+                df["region_number"] = df["region_number"].astype("Int64")  # nullable integer
 
             logger.info(f"fetched {len(df)} active solar regions")
             return df
@@ -206,6 +222,138 @@ class SolarRegionFetcher(NOAAFetcher):
         except Exception as e:
             logger.error(f"failed to parse solar region data: {e}")
             return None
+
+
+class MagnetogramFetcher(NOAAFetcher):
+    """fetcher for solar magnetogram data."""
+
+    def fetch_magnetogram_from_regions(self, regions_df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        extract magnetogram data from solar regions dataframe.
+
+        note: noaa swpc doesn't provide direct magnetogram json endpoints.
+        this extracts magnetic field information from the solar regions data.
+        for full magnetogram data, integrate with nasa sdo/hmi jsoc api.
+
+        args:
+            regions_df: dataframe with solar region data (from SolarRegionFetcher)
+
+        returns:
+            dataframe with magnetogram data
+        """
+        if regions_df is None or len(regions_df) == 0:
+            logger.warning("no region data available for magnetogram extraction")
+            return None
+
+        try:
+            magnetogram_data = []
+
+            for _, row in regions_df.iterrows():
+                # skip rows without region_number (required field)
+                region_number = row.get("region_number")
+                if pd.isna(region_number) or region_number is None:
+                    continue
+
+                # extract magnetic field information from region data
+                magnetic_type = row.get("magnetic_type", "")
+                magnetic_complexity = self._parse_magnetic_complexity(magnetic_type)
+
+                magnetogram_data.append(
+                    {
+                        "timestamp": row.get("timestamp", datetime.utcnow()),
+                        "region_number": int(region_number),
+                        "magnetic_field_polarity": self._parse_polarity(magnetic_type),
+                        "magnetic_complexity": magnetic_complexity,
+                        "latitude": row.get("latitude"),
+                        "longitude": row.get("longitude"),
+                        "magnetic_field_strength": None,  # not available from noaa swpc endpoint
+                        "source": "noaa_swpc",
+                        "data_quality": "good" if magnetic_type else "fair",
+                    }
+                )
+
+            if not magnetogram_data:
+                logger.warning("no valid magnetogram data extracted (all regions missing region_number)")
+                return None
+
+            df = pd.DataFrame(magnetogram_data)
+            logger.info(f"extracted magnetogram data for {len(df)} regions")
+            return df
+
+        except Exception as e:
+            logger.error(f"failed to extract magnetogram data: {e}")
+            return None
+
+    def _parse_magnetic_complexity(self, magnetic_type: str) -> str:
+        """
+        parse magnetic complexity from magnetic type string.
+
+        args:
+            magnetic_type: string like "Beta-Gamma", "Alpha", etc.
+
+        returns:
+            normalized complexity string
+        """
+        if not magnetic_type:
+            return "unknown"
+
+        magnetic_type_lower = magnetic_type.lower()
+
+        # map common magnetic classifications
+        if "delta" in magnetic_type_lower:
+            return "beta-gamma-delta"
+        elif "gamma" in magnetic_type_lower:
+            return "beta-gamma"
+        elif "beta" in magnetic_type_lower:
+            return "beta"
+        elif "alpha" in magnetic_type_lower:
+            return "alpha"
+        else:
+            return magnetic_type
+
+    def _parse_polarity(self, magnetic_type: str) -> str:
+        """
+        parse magnetic polarity from magnetic type.
+
+        args:
+            magnetic_type: magnetic type string
+
+        returns:
+            polarity: positive, negative, or mixed
+        """
+        if not magnetic_type:
+            return "unknown"
+
+        magnetic_type_lower = magnetic_type.lower()
+
+        # simple heuristic: if multiple types mentioned, likely mixed
+        if "gamma" in magnetic_type_lower or "delta" in magnetic_type_lower:
+            return "mixed"
+        elif "beta" in magnetic_type_lower:
+            return "mixed"
+        else:
+            return "unknown"
+
+    def fetch_sdo_hmi_magnetogram(
+        self, start_date: datetime, end_date: Optional[datetime] = None
+    ) -> Optional[pd.DataFrame]:
+        """
+        fetch sdo/hmi magnetogram data from nasa jsoc.
+
+        note: this is a placeholder for future sdo/hmi integration.
+        nasa jsoc api requires authentication and has complex query syntax.
+
+        args:
+            start_date: start datetime
+            end_date: end datetime (defaults to now)
+
+        returns:
+            dataframe with magnetogram data (not implemented yet)
+        """
+        logger.warning("sdo/hmi magnetogram fetching not yet implemented")
+        logger.info("requires nasa jsoc api integration")
+        logger.info("see: https://jsoc.stanford.edu/ajax/lookdata.html")
+        return None
 
 
 def save_cache(data: pd.DataFrame, cache_name: str):

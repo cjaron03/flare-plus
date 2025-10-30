@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from src.config import DataConfig
-from src.data.fetchers import GOESXRayFetcher, SolarRegionFetcher, load_cache, save_cache
+from src.data.fetchers import GOESXRayFetcher, SolarRegionFetcher, MagnetogramFetcher, load_cache, save_cache
 from src.data.persistence import DataPersister
 from src.data.database import init_database
 
@@ -18,6 +18,7 @@ class DataIngestionPipeline:
     def __init__(self):
         self.xray_fetcher = GOESXRayFetcher()
         self.region_fetcher = SolarRegionFetcher()
+        self.magnetogram_fetcher = MagnetogramFetcher()
         self.persister = DataPersister()
 
     def run_incremental_update(self, use_cache: bool = True) -> dict:
@@ -31,7 +32,7 @@ class DataIngestionPipeline:
             dict with ingestion statistics
         """
         logger.info("starting incremental data update")
-        results = {"xray_flux": None, "solar_regions": None, "timestamp": datetime.utcnow()}
+        results = {"xray_flux": None, "solar_regions": None, "magnetogram": None, "timestamp": datetime.utcnow()}
 
         # fetch and save xray flux data
         try:
@@ -75,6 +76,23 @@ class DataIngestionPipeline:
 
             if region_data is not None and len(region_data) > 0:
                 results["solar_regions"] = self.persister.save_solar_regions(region_data)
+
+                # extract magnetogram data from regions
+                try:
+                    logger.info("extracting magnetogram data from solar regions")
+                    magnetogram_data = self.magnetogram_fetcher.fetch_magnetogram_from_regions(region_data)
+
+                    if magnetogram_data is not None and len(magnetogram_data) > 0:
+                        magnetogram_cache_name = f"magnetogram_{datetime.utcnow().strftime('%Y%m%d_%H')}"
+                        if use_cache:
+                            save_cache(magnetogram_data, magnetogram_cache_name)
+
+                        results["magnetogram"] = self.persister.save_magnetogram(magnetogram_data)
+                    else:
+                        logger.warning("no magnetogram data extracted")
+                except Exception as e:
+                    logger.error(f"error extracting magnetogram data: {e}")
+                    results["magnetogram"] = {"status": "failure", "error": str(e)}
             else:
                 logger.warning("no solar region data available")
 

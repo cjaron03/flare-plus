@@ -38,15 +38,16 @@ jobs:
             exit 1
           done || true
       
-      - name: setup python
-        uses: actions/setup-python@v4
+      - name: setup python and deps
+        uses: ./.github/actions/setup-python-deps
         with:
           python-version: '3.9'
+          install-dev: 'false'
       
       - name: check for syntax errors
         run: find src tests -name "*.py" -type f -exec python -m py_compile {} \;
 
-  security-scan:
+  security-and-quality:
     runs-on: ubuntu-latest
     
     steps:
@@ -63,18 +64,6 @@ jobs:
       
       - name: run bandit security linter
         run: bandit -r src/ -ll -f screen
-
-  code-quality:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: setup python and deps
-        uses: ./.github/actions/setup-python-deps
-        with:
-          python-version: '3.9'
-          install-dev: 'true'
       
       - name: check code complexity
         run: radon cc src/ -a -nb --total-average
