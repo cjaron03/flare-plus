@@ -2,20 +2,20 @@
 
 ## Data Ingestion
 - [x] Inventory NOAA/SWPC endpoints for GOES XRS flux, sunspot classifications, magnetograms; document auth + cadence.
-  - ✅ GOES XRS flux endpoints documented (`goes_xrs_7day`, `goes_xrs_6hour`)
-  - ✅ Solar regions endpoint documented (`solar_regions`)
-  - ✅ Magnetograms endpoint implemented (`MagnetogramFetcher` extracts magnetic field data from solar regions)
-  - ✅ Auth documented (public, no API keys required)
-  - ⚠️ Cadence documentation incomplete (update interval exists but not fully documented)
+  - [OK] GOES XRS flux endpoints documented (`goes_xrs_7day`, `goes_xrs_6hour`)
+  - [OK] Solar regions endpoint documented (`solar_regions`)
+  - [OK] Magnetograms endpoint implemented (`MagnetogramFetcher` extracts magnetic field data from solar regions)
+  - [OK] Auth documented (public, no API keys required)
+  - [WARNING] Cadence documentation incomplete (update interval exists but not fully documented)
 - [x] Build data fetcher with caching (24-48h window, plus historical backfill) and persistence (e.g., parquet or postgres).
-  - ✅ Fetchers implemented (`GOESXRayFetcher`, `SolarRegionFetcher`)
-  - ✅ Caching layer with configurable 24-48h window
-  - ✅ Persistence to PostgreSQL (`DataPersister`)
-  - ⚠️ Historical backfill placeholder exists but not fully implemented
+  - [OK] Fetchers implemented (`GOESXRayFetcher`, `SolarRegionFetcher`)
+  - [OK] Caching layer with configurable 24-48h window
+  - [OK] Persistence to PostgreSQL (`DataPersister`)
+  - [WARNING] Historical backfill placeholder exists but not fully implemented
 - [x] Schedule incremental updates and verify schema covers features needed for both models.
-  - ✅ Incremental update script (`scripts/run_ingestion.py`)
-  - ✅ Schema covers flux, regions, flares tables
-  - ⚠️ Schema verification against model feature requirements pending
+  - [OK] Incremental update script (`scripts/run_ingestion.py`)
+  - [OK] Schema covers flux, regions, flares tables
+  - [WARNING] Schema verification against model feature requirements pending
 
 ## Feature Engineering
 - [ ] Derive sunspot complexity metrics (McIntosh/Mount Wilson) and flux trend features from magnetograms.
