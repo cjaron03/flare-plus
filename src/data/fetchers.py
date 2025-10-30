@@ -233,6 +233,11 @@ class MagnetogramFetcher(NOAAFetcher):
             magnetogram_data = []
 
             for _, row in regions_df.iterrows():
+                # skip rows without region_number (required field)
+                region_number = row.get("region_number")
+                if pd.isna(region_number) or region_number is None:
+                    continue
+
                 # extract magnetic field information from region data
                 magnetic_type = row.get("magnetic_type", "")
                 magnetic_complexity = self._parse_magnetic_complexity(magnetic_type)
@@ -240,7 +245,7 @@ class MagnetogramFetcher(NOAAFetcher):
                 magnetogram_data.append(
                     {
                         "timestamp": row.get("timestamp", datetime.utcnow()),
-                        "region_number": row.get("region_number"),
+                        "region_number": int(region_number),
                         "magnetic_field_polarity": self._parse_polarity(magnetic_type),
                         "magnetic_complexity": magnetic_complexity,
                         "latitude": row.get("latitude"),
@@ -250,6 +255,10 @@ class MagnetogramFetcher(NOAAFetcher):
                         "data_quality": "good" if magnetic_type else "fair",
                     }
                 )
+
+            if not magnetogram_data:
+                logger.warning("no valid magnetogram data extracted (all regions missing region_number)")
+                return None
 
             df = pd.DataFrame(magnetogram_data)
             logger.info(f"extracted magnetogram data for {len(df)} regions")
