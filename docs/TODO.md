@@ -37,9 +37,24 @@
 - [x] Feature engineering pipeline (`FeatureEngineer`) for end-to-end feature computation
 
 ## Short-Term Classification (24-48h)
-- [ ] Frame supervised labels for next-24h and next-48h flare classes {None, C, M, X}.
-- [ ] Train baseline models (logistic, gradient boosting) with cross-validation and class-balancing.
-- [ ] Calibrate probabilities; evaluate with Brier score, ROC-AUC per class, and reliability diagrams.
+- [x] Frame supervised labels for next-24h and next-48h flare classes {None, C, M, X}.
+  - [OK] Label creation module implemented (`FlareLabeler` class)
+  - [OK] Supports multiple prediction windows (24h, 48h)
+  - [OK] Handles class hierarchy (X > M > C > None)
+  - [OK] Integrates with feature engineering pipeline
+- [x] Train baseline models (logistic, gradient boosting) with cross-validation and class-balancing.
+  - [OK] Logistic regression with class weights and SMOTE support
+  - [OK] Gradient boosting classifier with cross-validation
+  - [OK] Stratified K-fold cross-validation implemented
+  - [OK] Class balancing via class weights and SMOTE oversampling
+  - [OK] Model training pipeline (`ModelTrainer` class)
+- [x] Calibrate probabilities; evaluate with Brier score, ROC-AUC per class, and reliability diagrams.
+  - [OK] Probability calibration implemented (isotonic and sigmoid methods)
+  - [OK] Brier score computation per class and macro average
+  - [OK] ROC-AUC per class (one-vs-rest) with macro average
+  - [OK] Reliability diagrams (calibration curves) implemented
+  - [OK] Comprehensive evaluation metrics (`ModelEvaluator` class)
+  - [OK] End-to-end pipeline (`ClassificationPipeline`) for training and evaluation
 
 ## Time-to-Event Modeling
 - [ ] Define target windows for next X-class flare; experiment with survival analysis or hazard models.
