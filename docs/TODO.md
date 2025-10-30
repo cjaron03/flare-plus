@@ -20,9 +20,21 @@
   - [NOTE] Schema verification against model feature requirements pending (models not yet built)
 
 ## Feature Engineering
-- [ ] Derive sunspot complexity metrics (McIntosh/Mount Wilson) and flux trend features from magnetograms.
-- [ ] Aggregate rolling statistics (last 6/12/24h) and recency-weighted flare counts by class.
-- [ ] Normalize/standardize features; flag missing data paths and imputation strategy.
+- [x] Derive sunspot complexity metrics (McIntosh/Mount Wilson) and flux trend features from magnetograms.
+  - [OK] McIntosh complexity metrics implemented (`compute_mcintosh_complexity`)
+  - [OK] Mount Wilson complexity metrics implemented (`compute_mount_wilson_complexity`)
+  - [OK] Magnetic complexity score implemented (`compute_magnetic_complexity_score`)
+  - [OK] Flux trend features implemented (`compute_flux_trends`, `compute_flux_rate_of_change`)
+- [x] Aggregate rolling statistics (last 6/12/24h) and recency-weighted flare counts by class.
+  - [OK] Rolling statistics implemented (`compute_rolling_statistics`) with configurable windows
+  - [OK] Recency-weighted flare counts implemented (`compute_recency_weighted_flare_counts`) with exponential decay
+  - [OK] Supports multiple time windows (6/12/24h) and flare classes (B/C/M/X)
+- [x] Normalize/standardize features; flag missing data paths and imputation strategy.
+  - [OK] Feature normalization implemented (`normalize_features`) with min-max and robust scaling
+  - [OK] Feature standardization implemented (`standardize_features`) with standard and robust scaling
+  - [OK] Missing data handling implemented (`handle_missing_data`) with multiple strategies
+  - [OK] Missing data flagging implemented (`flag_missing_data_paths`) for monitoring
+- [x] Feature engineering pipeline (`FeatureEngineer`) for end-to-end feature computation
 
 ## Short-Term Classification (24-48h)
 - [ ] Frame supervised labels for next-24h and next-48h flare classes {None, C, M, X}.
