@@ -181,24 +181,38 @@ class SolarRegionFetcher(NOAAFetcher):
         try:
             df = pd.DataFrame(data)
 
-            # noaa solar regions format typically includes:
-            # region_number, location, latitude, longitude, area, extent, etc.
+            # noaa solar regions api format:
+            # region, latitude, longitude, location, area, spot_class, extent, number_spots,
+            # mag_class, observed_date, etc.
 
-            # add current timestamp
-            df["timestamp"] = datetime.utcnow()
+            # parse observed_date to timestamp
+            if "observed_date" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["observed_date"])
+            else:
+                df["timestamp"] = datetime.utcnow()
 
-            # normalize column names
-            column_mapping = {
-                "Number": "region_number",
-                "Location": "location",
-                "Carlon": "longitude",
-                "Area": "area",
-                "MagType": "magnetic_type",
-                "Lat": "latitude",
-                "Lon": "longitude",
-            }
+            # copy mag_class to magnetic_type before renaming
+            if "mag_class" in df.columns:
+                df["magnetic_type"] = df["mag_class"]
 
-            df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+            # apply column mappings
+            df = df.rename(columns={
+                "region": "region_number",
+                "spot_class": "mcintosh_class",
+                "mag_class": "mount_wilson_class",
+                "number_spots": "num_sunspots",
+            })
+
+            # filter out rows without region_number (required field)
+            initial_count = len(df)
+            df = df[df["region_number"].notna()]
+            filtered_count = len(df)
+            if filtered_count < initial_count:
+                logger.warning(f"filtered out {initial_count - filtered_count} records without region_number")
+
+            # ensure region_number is integer (handle any float values)
+            if len(df) > 0 and "region_number" in df.columns:
+                df["region_number"] = df["region_number"].astype("Int64")  # nullable integer
 
             logger.info(f"fetched {len(df)} active solar regions")
             return df

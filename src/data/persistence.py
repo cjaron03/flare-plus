@@ -115,16 +115,41 @@ class DataPersister:
         try:
             with self.db.get_session() as session:
                 for _, row in df.iterrows():
+                    # skip rows without required region_number
+                    region_number = row.get("region_number")
+                    if pd.isna(region_number) or region_number is None:
+                        continue
+
+                    # handle area - convert to int, handle NaN
+                    area = row.get("area")
+                    if pd.notna(area):
+                        try:
+                            area = int(float(area))
+                        except (ValueError, TypeError):
+                            area = None
+                    else:
+                        area = None
+
+                    # handle num_sunspots - convert to int, handle NaN
+                    num_sunspots = row.get("num_sunspots")
+                    if pd.notna(num_sunspots):
+                        try:
+                            num_sunspots = int(float(num_sunspots))
+                        except (ValueError, TypeError):
+                            num_sunspots = None
+                    else:
+                        num_sunspots = None
+
                     region = SolarRegion(
                         timestamp=row.get("timestamp", datetime.utcnow()),
-                        region_number=row.get("region_number"),
-                        latitude=row.get("latitude"),
-                        longitude=row.get("longitude"),
-                        mcintosh_class=row.get("mcintosh_class"),
-                        mount_wilson_class=row.get("mount_wilson_class"),
-                        area=row.get("area"),
-                        num_sunspots=row.get("num_sunspots"),
-                        magnetic_type=row.get("magnetic_type"),
+                        region_number=int(region_number),
+                        latitude=row.get("latitude") if pd.notna(row.get("latitude")) else None,
+                        longitude=row.get("longitude") if pd.notna(row.get("longitude")) else None,
+                        mcintosh_class=row.get("mcintosh_class") if pd.notna(row.get("mcintosh_class")) else None,
+                        mount_wilson_class=row.get("mount_wilson_class") if pd.notna(row.get("mount_wilson_class")) else None,
+                        area=area,
+                        num_sunspots=num_sunspots,
+                        magnetic_type=row.get("magnetic_type") if pd.notna(row.get("magnetic_type")) else None,
                     )
 
                     session.add(region)
