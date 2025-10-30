@@ -208,6 +208,129 @@ class SolarRegionFetcher(NOAAFetcher):
             return None
 
 
+class MagnetogramFetcher(NOAAFetcher):
+    """fetcher for solar magnetogram data."""
+
+    def fetch_magnetogram_from_regions(self, regions_df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """
+        extract magnetogram data from solar regions dataframe.
+
+        note: noaa swpc doesn't provide direct magnetogram json endpoints.
+        this extracts magnetic field information from the solar regions data.
+        for full magnetogram data, integrate with nasa sdo/hmi jsoc api.
+
+        args:
+            regions_df: dataframe with solar region data (from SolarRegionFetcher)
+
+        returns:
+            dataframe with magnetogram data
+        """
+        if regions_df is None or len(regions_df) == 0:
+            logger.warning("no region data available for magnetogram extraction")
+            return None
+
+        try:
+            magnetogram_data = []
+
+            for _, row in regions_df.iterrows():
+                # extract magnetic field information from region data
+                magnetic_type = row.get("magnetic_type", "")
+                magnetic_complexity = self._parse_magnetic_complexity(magnetic_type)
+
+                magnetogram_data.append(
+                    {
+                        "timestamp": row.get("timestamp", datetime.utcnow()),
+                        "region_number": row.get("region_number"),
+                        "magnetic_field_polarity": self._parse_polarity(magnetic_type),
+                        "magnetic_complexity": magnetic_complexity,
+                        "latitude": row.get("latitude"),
+                        "longitude": row.get("longitude"),
+                        "magnetic_field_strength": None,  # not available from noaa swpc endpoint
+                        "source": "noaa_swpc",
+                        "data_quality": "good" if magnetic_type else "fair",
+                    }
+                )
+
+            df = pd.DataFrame(magnetogram_data)
+            logger.info(f"extracted magnetogram data for {len(df)} regions")
+            return df
+
+        except Exception as e:
+            logger.error(f"failed to extract magnetogram data: {e}")
+            return None
+
+    def _parse_magnetic_complexity(self, magnetic_type: str) -> str:
+        """
+        parse magnetic complexity from magnetic type string.
+
+        args:
+            magnetic_type: string like "Beta-Gamma", "Alpha", etc.
+
+        returns:
+            normalized complexity string
+        """
+        if not magnetic_type:
+            return "unknown"
+
+        magnetic_type_lower = magnetic_type.lower()
+
+        # map common magnetic classifications
+        if "delta" in magnetic_type_lower:
+            return "beta-gamma-delta"
+        elif "gamma" in magnetic_type_lower:
+            return "beta-gamma"
+        elif "beta" in magnetic_type_lower:
+            return "beta"
+        elif "alpha" in magnetic_type_lower:
+            return "alpha"
+        else:
+            return magnetic_type
+
+    def _parse_polarity(self, magnetic_type: str) -> str:
+        """
+        parse magnetic polarity from magnetic type.
+
+        args:
+            magnetic_type: magnetic type string
+
+        returns:
+            polarity: positive, negative, or mixed
+        """
+        if not magnetic_type:
+            return "unknown"
+
+        magnetic_type_lower = magnetic_type.lower()
+
+        # simple heuristic: if multiple types mentioned, likely mixed
+        if "gamma" in magnetic_type_lower or "delta" in magnetic_type_lower:
+            return "mixed"
+        elif "beta" in magnetic_type_lower:
+            return "mixed"
+        else:
+            return "unknown"
+
+    def fetch_sdo_hmi_magnetogram(
+        self, start_date: datetime, end_date: Optional[datetime] = None
+    ) -> Optional[pd.DataFrame]:
+        """
+        fetch sdo/hmi magnetogram data from nasa jsoc.
+
+        note: this is a placeholder for future sdo/hmi integration.
+        nasa jsoc api requires authentication and has complex query syntax.
+
+        args:
+            start_date: start datetime
+            end_date: end datetime (defaults to now)
+
+        returns:
+            dataframe with magnetogram data (not implemented yet)
+        """
+        logger.warning("sdo/hmi magnetogram fetching not yet implemented")
+        logger.info("requires nasa jsoc api integration")
+        logger.info("see: https://jsoc.stanford.edu/ajax/lookdata.html")
+        return None
+
+
 def save_cache(data: pd.DataFrame, cache_name: str):
     """
     save dataframe to cache.

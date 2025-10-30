@@ -1,9 +1,21 @@
 # Solar Flare Prediction Roadmap
 
 ## Data Ingestion
-- [ ] Inventory NOAA/SWPC endpoints for GOES XRS flux, sunspot classifications, magnetograms; document auth + cadence.
-- [ ] Build data fetcher with caching (24-48h window, plus historical backfill) and persistence (e.g., parquet or postgres).
-- [ ] Schedule incremental updates and verify schema covers features needed for both models.
+- [x] Inventory NOAA/SWPC endpoints for GOES XRS flux, sunspot classifications, magnetograms; document auth + cadence.
+  - ✅ GOES XRS flux endpoints documented (`goes_xrs_7day`, `goes_xrs_6hour`)
+  - ✅ Solar regions endpoint documented (`solar_regions`)
+  - ✅ Auth documented (public, no API keys required)
+  - ⚠️ Magnetograms endpoint not yet implemented
+  - ⚠️ Cadence documentation incomplete (update interval exists but not fully documented)
+- [x] Build data fetcher with caching (24-48h window, plus historical backfill) and persistence (e.g., parquet or postgres).
+  - ✅ Fetchers implemented (`GOESXRayFetcher`, `SolarRegionFetcher`)
+  - ✅ Caching layer with configurable 24-48h window
+  - ✅ Persistence to PostgreSQL (`DataPersister`)
+  - ⚠️ Historical backfill placeholder exists but not fully implemented
+- [x] Schedule incremental updates and verify schema covers features needed for both models.
+  - ✅ Incremental update script (`scripts/run_ingestion.py`)
+  - ✅ Schema covers flux, regions, flares tables
+  - ⚠️ Schema verification against model feature requirements pending
 
 ## Feature Engineering
 - [ ] Derive sunspot complexity metrics (McIntosh/Mount Wilson) and flux trend features from magnetograms.

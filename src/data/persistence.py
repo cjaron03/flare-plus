@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 
 from src.data.database import get_database
-from src.data.schema import GOESXRayFlux, SolarRegion, FlareEvent, DataIngestionLog
+from src.data.schema import GOESXRayFlux, SolarRegion, FlareEvent, DataIngestionLog, SolarMagnetogram
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,66 @@ class DataPersister:
             stats["status"] = "failure"
             stats["error_message"] = str(e)
             logger.error(f"failed to save solar region data: {e}")
+
+        finally:
+            duration = (datetime.utcnow() - start_time).total_seconds()
+            self._log_ingestion(
+                source_name=source_name,
+                data_start=df["timestamp"].min() if len(df) > 0 and "timestamp" in df else None,
+                data_end=df["timestamp"].max() if len(df) > 0 and "timestamp" in df else None,
+                duration=duration,
+                **stats,
+            )
+
+        return stats
+
+    def save_magnetogram(self, df: pd.DataFrame, source_name: str = "noaa_magnetogram") -> dict:
+        """
+        save magnetogram data to database.
+
+        args:
+            df: dataframe with magnetogram data
+            source_name: name of data source for logging
+
+        returns:
+            dict with save statistics
+        """
+        start_time = datetime.utcnow()
+        stats = {
+            "records_fetched": len(df),
+            "records_inserted": 0,
+            "records_updated": 0,
+            "status": "success",
+            "error_message": None,
+        }
+
+        try:
+            with self.db.get_session() as session:
+                for _, row in df.iterrows():
+                    magnetogram = SolarMagnetogram(
+                        timestamp=row.get("timestamp", datetime.utcnow()),
+                        region_number=row.get("region_number"),
+                        magnetic_field_strength=row.get("magnetic_field_strength"),
+                        magnetic_field_polarity=row.get("magnetic_field_polarity"),
+                        magnetic_complexity=row.get("magnetic_complexity"),
+                        latitude=row.get("latitude"),
+                        longitude=row.get("longitude"),
+                        solar_radius=row.get("solar_radius"),
+                        source=row.get("source", "noaa_swpc"),
+                        data_quality=row.get("data_quality", "good"),
+                    )
+
+                    session.add(magnetogram)
+                    stats["records_inserted"] += 1
+
+                session.commit()
+
+            logger.info(f"saved {stats['records_inserted']} magnetogram records")
+
+        except Exception as e:
+            stats["status"] = "failure"
+            stats["error_message"] = str(e)
+            logger.error(f"failed to save magnetogram data: {e}")
 
         finally:
             duration = (datetime.utcnow() - start_time).total_seconds()

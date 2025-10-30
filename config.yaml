@@ -12,6 +12,11 @@ data_ingestion:
     solar_regions: "https://services.swpc.noaa.gov/json/solar_regions.json"
     # historical data from noaa archives
     goes_archive: "https://www.ncei.noaa.gov/data/goes-space-environment-monitor/access/avg/"
+    # magnetogram data sources
+    # note: noaa swpc doesn't provide direct magnetogram json endpoints
+    # solar regions endpoint includes magnetic_type field
+    # for full magnetogram data, use nasa sdo/hmi (jsoc) api
+    sdo_hmi_info: "https://jsoc.stanford.edu/ajax/lookdata.html"
 
 database:
   table_prefix: "flare_"

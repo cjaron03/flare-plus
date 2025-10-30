@@ -96,6 +96,39 @@ class FlareEvent(Base):
         return f"<FlareEvent(class={self.flare_class}, peak={self.peak_time})>"
 
 
+class SolarMagnetogram(Base):
+    """solar magnetogram data - magnetic field measurements by region."""
+
+    __tablename__ = "flare_solar_magnetogram"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    region_number = Column(Integer, nullable=False)
+
+    # magnetic field measurements
+    magnetic_field_strength = Column(Float)  # gauss (G) or tesla
+    magnetic_field_polarity = Column(String(10))  # positive, negative, mixed
+    magnetic_complexity = Column(String(20))  # alpha, beta, beta-gamma, beta-gamma-delta
+
+    # location on solar disk
+    latitude = Column(Float)  # heliographic latitude
+    longitude = Column(Float)  # heliographic longitude
+    solar_radius = Column(Float)  # distance from disk center (0-1)
+
+    # source metadata
+    source = Column(String(50), default="noaa_swpc")  # noaa_swpc, sdo_hmi, etc.
+    data_quality = Column(String(20))  # good, fair, poor
+
+    # ingestion tracking
+    ingested_at = Column(DateTime, default=datetime.utcnow)
+
+    # composite unique constraint
+    __table_args__ = (Index("ix_magnetogram_region_timestamp", "region_number", "timestamp"),)
+
+    def __repr__(self):
+        return f"<SolarMagnetogram(region={self.region_number}, timestamp={self.timestamp})>"
+
+
 class DataIngestionLog(Base):
     """log of data ingestion runs for monitoring and debugging."""
 
