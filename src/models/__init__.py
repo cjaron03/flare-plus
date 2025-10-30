@@ -1,3 +1,4 @@
+# fmt: off
 """short-term classification models for flare prediction."""
 
 from src.models.labeling import create_labels, FlareLabeler
@@ -19,4 +20,5 @@ __all__ = [
     "ModelEvaluator",
     "ClassificationPipeline",
 ]
+# fmt: on
 

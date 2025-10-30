@@ -1,3 +1,4 @@
+# fmt: off
 """model evaluation with calibration, brier score, roc-auc, and reliability diagrams."""
 
 import logging
@@ -356,6 +357,7 @@ def evaluate_model(
     return evaluator.evaluate_model(
         model, X, y_true, classes, calibrate, plot_reliability=False
     )
+# fmt: on
 
 
 def calibrate_probabilities(

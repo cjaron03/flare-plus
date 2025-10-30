@@ -1,3 +1,4 @@
+# fmt: off
 """main pipeline for short-term classification."""
 
 import logging
@@ -332,4 +333,6 @@ class ClassificationPipeline:
             "class_probabilities": class_probs,
             "model_type": model_type,
         }
+
+# fmt: on
 

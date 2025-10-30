@@ -1,8 +1,9 @@
+# fmt: off
 """model training with cross-validation and class balancing."""
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-import pickle
+import joblib
 
 import pandas as pd
 import numpy as np
@@ -309,14 +310,12 @@ class ModelTrainer:
         return trained_models
 
     def save_model(self, model: Any, filepath: str):
-        """save trained model to file."""
-        with open(filepath, "wb") as f:
-            pickle.dump(model, f)
+        """save trained model to file using joblib (safer than pickle)."""
+        joblib.dump(model, filepath)
 
     def load_model(self, filepath: str) -> Any:
-        """load trained model from file."""
-        with open(filepath, "rb") as f:
-            return pickle.load(f)
+        """load trained model from file using joblib."""
+        return joblib.load(filepath)
 
 
 def train_baseline_models(
@@ -341,4 +340,5 @@ def train_baseline_models(
     """
     trainer = ModelTrainer(use_smote=use_smote, cv_folds=cv_folds)
     return trainer.train_baseline_models(features_df, label_column, models)
+# fmt: on
 

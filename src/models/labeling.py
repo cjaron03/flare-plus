@@ -1,3 +1,4 @@
+# fmt: off
 """label creation for supervised learning - next-24h and next-48h flare classes."""
 
 import logging
@@ -217,4 +218,5 @@ def create_labels(
     """
     labeler = FlareLabeler()
     return labeler.create_labels(timestamps, windows)
+# fmt: on
 
