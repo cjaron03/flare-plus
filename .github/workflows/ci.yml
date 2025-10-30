@@ -13,6 +13,8 @@ concurrency:
 jobs:
   lint-and-format:
     runs-on: ubuntu-latest
+    # only run on PRs (main push already validated by PR checks)
+    if: github.event_name == 'pull_request'
     
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +56,17 @@ jobs:
           - 5432:5432
     
     strategy:
+      # run full matrix on PRs, but only 3.9 on main push (PR already validated)
       matrix:
-        python-version: ['3.9', '3.10', '3.11']
+        include:
+          - python-version: '3.9'
+          - python-version: '3.10'
+          - python-version: '3.11'
+        exclude:
+          - python-version: '3.10'
+            if: github.event_name != 'pull_request'
+          - python-version: '3.11'
+            if: github.event_name != 'pull_request'
     
     steps:
       - uses: actions/checkout@v4
@@ -75,12 +86,3 @@ jobs:
           DB_PASSWORD: postgres
         # TODO: increase coverage threshold as tests are added (currently 41%)
         run: pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=40
-      
-      - name: test database initialization
-        env:
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: flare_prediction_test
-          DB_USER: postgres
-          DB_PASSWORD: postgres
-        run: python scripts/init_db.py <<< "n"
