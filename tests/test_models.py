@@ -242,15 +242,27 @@ def test_calibrate_probabilities(sample_features):
     """test probability calibration."""
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
-    # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    # add labels - need at least 3 examples per class for 3-fold cv
+    sample_features["label_24h"] = [
+        "None",
+        "None",
+        "None",
+        "C",
+        "C",
+        "C",
+        "M",
+        "M",
+        "M",
+        "X",
+    ]
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
 
     model, _ = trainer.train_logistic_regression(X, y)
 
     evaluator = ModelEvaluator()
-    calibrated_model, info = evaluator.calibrate_probabilities(model, X, y)
+    # use cv=2 for small dataset to avoid cross-validation error
+    calibrated_model, info = evaluator.calibrate_probabilities(model, X, y, cv=2)
 
     assert calibrated_model is not None
     assert "method" in info

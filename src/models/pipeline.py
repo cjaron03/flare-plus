@@ -155,7 +155,9 @@ class ClassificationPipeline:
 
             # prepare features and labels
             exclude_cols = ["timestamp", "region_number"] + [
-                col for col in dataset.columns if col.startswith("label_") or col.startswith("num_flares_")
+                col
+                for col in dataset.columns
+                if col.startswith("label_") or col.startswith("num_flares_")
             ]
             feature_cols = [col for col in dataset.columns if col not in exclude_cols]
             X = dataset[feature_cols].values
@@ -176,7 +178,9 @@ class ClassificationPipeline:
             )
 
             logger.info(f"train size: {len(X_train)}, test size: {len(X_test)}")
-            logger.info(f"class distribution (train): {dict(zip(classes, *np.unique(y_train, return_counts=True)))}")
+            logger.info(
+                f"class distribution (train): {dict(zip(classes, *np.unique(y_train, return_counts=True)))}"
+            )
 
             # train models
             window_results = {}

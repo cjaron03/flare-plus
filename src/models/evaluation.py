@@ -199,7 +199,10 @@ class ModelEvaluator:
 
             # compute calibration curve
             fraction_of_positives, mean_predicted_value = calibration_curve(
-                y_true_binarized[:, i], y_prob[:, i], n_bins=n_bins, strategy="uniform"
+                y_true_binarized[:, i],
+                y_prob[:, i],
+                n_bins=n_bins,
+                strategy="uniform",
             )
 
             # plot calibration curve

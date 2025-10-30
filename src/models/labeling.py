@@ -103,7 +103,7 @@ class FlareLabeler:
                                 "class_magnitude": r.class_magnitude,
                             }
                             for r in flares_records
-                        ]
+                        ],
                     )
 
                     # get maximum flare class
@@ -167,7 +167,9 @@ class FlareLabeler:
             if label_col in labels_df.columns:
                 # convert to categorical with all classes
                 labels_df[label_col] = pd.Categorical(
-                    labels_df[label_col], categories=self.target_classes, ordered=True
+                    labels_df[label_col],
+                    categories=self.target_classes,
+                    ordered=True,
                 )
 
         return labels_df
