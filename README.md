@@ -98,10 +98,22 @@ configure scheduled updates using cron or system scheduler:
 all data comes from noaa space weather prediction center (swpc):
 
 - **goes xrs flux**: https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json
+  - update cadence: real-time (updates every ~5 minutes)
+  - data window: last 7 days via `goes_xrs_7day`, last 6 hours via `goes_xrs_6hour`
 - **solar regions**: https://services.swpc.noaa.gov/json/solar_regions.json
+  - update cadence: daily (typically updated once per day around midnight UTC)
+  - data window: current active regions with historical tracking
 - **historical archive**: https://www.ncei.noaa.gov/data/goes-space-environment-monitor/
+  - requires manual download and processing
 
 no api keys required - data is publicly accessible.
+
+### recommended update frequency
+
+- **production**: run ingestion every 60 minutes (default `UPDATE_INTERVAL_MINUTES=60`)
+  - ensures fresh data without excessive API calls
+  - cache window (48 hours) prevents redundant fetches
+- **development**: run manually as needed (`python scripts/run_ingestion.py`)
 
 ## development status
 

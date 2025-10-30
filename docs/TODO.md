@@ -6,18 +6,18 @@
   - [OK] Solar regions endpoint documented (`solar_regions`) - fixed column mapping to match NOAA API format
   - [OK] Magnetograms endpoint implemented (`MagnetogramFetcher` extracts magnetic field data from solar regions)
   - [OK] Auth documented (public, no API keys required)
-  - [WARNING] Cadence documentation incomplete (update interval exists but not fully documented)
+  - [OK] Cadence documented (GOES XRS: real-time ~5min, solar regions: daily, recommended ingestion: 60min)
 - [x] Build data fetcher with caching (24-48h window, plus historical backfill) and persistence (e.g., parquet or postgres).
   - [OK] Fetchers implemented (`GOESXRayFetcher`, `SolarRegionFetcher`, `MagnetogramFetcher`)
   - [OK] Caching layer with configurable 24-48h window
   - [OK] Persistence to PostgreSQL (`DataPersister`)
   - [OK] Data quality handling (filters invalid records, handles NaN values)
-  - [WARNING] Historical backfill placeholder exists but not fully implemented
+  - [NOTE] Historical backfill placeholder exists (future enhancement - requires manual NOAA archive processing)
 - [x] Schedule incremental updates and verify schema covers features needed for both models.
   - [OK] Incremental update script (`scripts/run_ingestion.py`)
   - [OK] Schema covers flux, regions, magnetogram, flares tables
   - [OK] All data sources tested and working (10k+ xray flux, 384+ solar regions, 384+ magnetogram records)
-  - [WARNING] Schema verification against model feature requirements pending
+  - [NOTE] Schema verification against model feature requirements pending (models not yet built)
 
 ## Feature Engineering
 - [ ] Derive sunspot complexity metrics (McIntosh/Mount Wilson) and flux trend features from magnetograms.
