@@ -206,7 +206,12 @@ class ModelEvaluator:
             )
 
             # plot calibration curve
-            ax.plot(mean_predicted_value, fraction_of_positives, "s-", label="calibration curve")
+            ax.plot(
+                mean_predicted_value,
+                fraction_of_positives,
+                "s-",
+                label="calibration curve",
+            )
             ax.plot([0, 1], [0, 1], "k--", label="perfect calibration")
 
             ax.set_xlabel("mean predicted probability")
@@ -260,7 +265,9 @@ class ModelEvaluator:
         if classes is None:
             if hasattr(model, "classes_"):
                 if self.label_encoder is not None:
-                    classes = self.label_encoder.inverse_transform(model.classes_).tolist()
+                    classes = self.label_encoder.inverse_transform(
+                        model.classes_
+                    ).tolist()
                 else:
                     classes = model.classes_.tolist()
             else:
@@ -278,7 +285,9 @@ class ModelEvaluator:
         )
 
         # confusion matrix
-        evaluation_results["confusion_matrix"] = confusion_matrix(y_true, y_pred).tolist()
+        evaluation_results["confusion_matrix"] = confusion_matrix(
+            y_true, y_pred
+        ).tolist()
 
         # brier score
         brier_scores = self.compute_brier_score(y_true, y_prob, classes)
@@ -290,13 +299,19 @@ class ModelEvaluator:
 
         # calibrate if requested
         if calibrate:
-            calibrated_model, calibration_info = self.calibrate_probabilities(model, X, y_true)
+            calibrated_model, calibration_info = self.calibrate_probabilities(
+                model, X, y_true
+            )
             evaluation_results["calibration"] = calibration_info
 
             # recompute metrics with calibrated probabilities
             calibrated_probs = calibrated_model.predict_proba(X)
-            calibrated_brier = self.compute_brier_score(y_true, calibrated_probs, classes)
-            calibrated_roc_auc = self.compute_roc_auc_per_class(y_true, calibrated_probs, classes)
+            calibrated_brier = self.compute_brier_score(
+                y_true, calibrated_probs, classes
+            )
+            calibrated_roc_auc = self.compute_roc_auc_per_class(
+                y_true, calibrated_probs, classes
+            )
 
             evaluation_results["calibrated_brier_score"] = calibrated_brier
             evaluation_results["calibrated_roc_auc"] = calibrated_roc_auc
@@ -310,7 +325,9 @@ class ModelEvaluator:
         else:
             # plot reliability diagram with uncalibrated probabilities
             if plot_reliability:
-                self.plot_reliability_diagram(y_true, y_prob, classes, filepath=reliability_filepath)
+                self.plot_reliability_diagram(
+                    y_true, y_prob, classes, filepath=reliability_filepath
+                )
 
         return evaluation_results
 
@@ -336,7 +353,9 @@ def evaluate_model(
         dict with evaluation metrics
     """
     evaluator = ModelEvaluator()
-    return evaluator.evaluate_model(model, X, y_true, classes, calibrate, plot_reliability=False)
+    return evaluator.evaluate_model(
+        model, X, y_true, classes, calibrate, plot_reliability=False
+    )
 
 
 def calibrate_probabilities(

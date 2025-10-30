@@ -41,7 +41,9 @@ class ClassificationPipeline:
         """
         self.feature_engineer = FeatureEngineer()
         self.labeler = FlareLabeler()
-        self.trainer = ModelTrainer(use_smote=use_smote, cv_folds=cv_folds, random_state=random_state)
+        self.trainer = ModelTrainer(
+            use_smote=use_smote, cv_folds=cv_folds, random_state=random_state
+        )
         self.evaluator = ModelEvaluator()
         self.use_smote = use_smote
         self.cv_folds = cv_folds
@@ -97,7 +99,9 @@ class ClassificationPipeline:
 
         # create labels
         logger.info("creating labels")
-        labeled_df = self.labeler.create_labels_from_features(features_df, windows=TARGET_WINDOWS)
+        labeled_df = self.labeler.create_labels_from_features(
+            features_df, windows=TARGET_WINDOWS
+        )
 
         # filter out rows without labels
         for window in TARGET_WINDOWS:
@@ -174,7 +178,11 @@ class ClassificationPipeline:
 
             # split train/test
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y_encoded, test_size=test_size, random_state=self.random_state, stratify=y_encoded
+                X,
+                y_encoded,
+                test_size=test_size,
+                random_state=self.random_state,
+                stratify=y_encoded,
             )
 
             logger.info(f"train size: {len(X_train)}, test size: {len(X_test)}")
@@ -238,10 +246,18 @@ class ClassificationPipeline:
 
                     # log key metrics
                     logger.info(f"\n{model_type} results:")
-                    logger.info(f"  cv accuracy: {training_info['cv_mean']:.4f} (+/- {training_info['cv_std']*2:.4f})")
-                    logger.info(f"  test accuracy: {evaluation_results['classification_report']['accuracy']:.4f}")
-                    logger.info(f"  macro avg brier score: {evaluation_results['brier_score']['macro_avg']:.4f}")
-                    logger.info(f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}")
+            logger.info(
+                f"  cv accuracy: {training_info['cv_mean']:.4f} (+/- {training_info['cv_std']*2:.4f})"
+            )
+            logger.info(
+                f"  test accuracy: {evaluation_results['classification_report']['accuracy']:.4f}"
+            )
+            logger.info(
+                f"  macro avg brier score: {evaluation_results['brier_score']['macro_avg']:.4f}"
+            )
+            logger.info(
+                f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}"
+            )
 
                 except Exception as e:
                     logger.error(f"error training/evaluating {model_type}: {e}")

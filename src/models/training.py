@@ -58,7 +58,9 @@ class ModelTrainer:
         """
         # get feature columns (exclude timestamp and label columns)
         exclude_cols = ["timestamp", "region_number"] + [
-            col for col in features_df.columns if col.startswith("label_") or col.startswith("num_flares_")
+            col
+            for col in features_df.columns
+            if col.startswith("label_") or col.startswith("num_flares_")
         ]
 
         feature_cols = [col for col in features_df.columns if col not in exclude_cols]
@@ -221,7 +223,9 @@ class ModelTrainer:
         else:
             raise ValueError(f"unknown model type: {model_type}")
 
-        pipeline = ImbPipeline([("smote", SMOTE(random_state=self.random_state)), ("model", base_model)])
+        pipeline = ImbPipeline(
+            [("smote", SMOTE(random_state=self.random_state)), ("model", base_model)]
+        )
 
         # cross-validation
         cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
@@ -263,8 +267,12 @@ class ModelTrainer:
         # prepare data
         X, y, feature_names = self.prepare_features_and_labels(features_df, label_column)
 
-        logger.info(f"training models on {len(X)} samples with {len(feature_names)} features")
-        logger.info(f"label distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
+        logger.info(
+            f"training models on {len(X)} samples with {len(feature_names)} features"
+        )
+        logger.info(
+            f"label distribution: {dict(zip(*np.unique(y, return_counts=True)))}"
+        )
 
         trained_models = {}
 

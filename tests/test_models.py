@@ -242,18 +242,18 @@ def test_calibrate_probabilities(sample_features):
     """test probability calibration."""
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
-    # add labels - need at least 3 examples per class for 3-fold cv
+    # add labels - ensure at least 2 examples per class for 2-fold cv
     sample_features["label_24h"] = [
         "None",
         "None",
-        "None",
         "C",
         "C",
-        "C",
-        "M",
         "M",
         "M",
         "X",
+        "X",
+        "None",
+        "C",
     ]
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
