@@ -87,12 +87,15 @@ def mock_solar_region_data():
     """mock solar region data."""
     return [
         {
-            "Number": 12345,
-            "Location": "N15E30",
-            "Carlon": 30,
-            "Lat": 15,
-            "Area": 120,
-            "MagType": "beta-gamma"
+            "region": 12345,
+            "latitude": 15.0,
+            "longitude": 30.0,
+            "location": "N15E30",
+            "area": 120,
+            "spot_class": "Dkc",
+            "mag_class": "beta-gamma",
+            "number_spots": 5,
+            "observed_date": "2025-10-30"
         }
     ]
 
