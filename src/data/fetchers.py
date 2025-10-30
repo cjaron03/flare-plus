@@ -196,12 +196,14 @@ class SolarRegionFetcher(NOAAFetcher):
                 df["magnetic_type"] = df["mag_class"]
 
             # apply column mappings
-            df = df.rename(columns={
-                "region": "region_number",
-                "spot_class": "mcintosh_class",
-                "mag_class": "mount_wilson_class",
-                "number_spots": "num_sunspots",
-            })
+            df = df.rename(
+                columns={
+                    "region": "region_number",
+                    "spot_class": "mcintosh_class",
+                    "mag_class": "mount_wilson_class",
+                    "number_spots": "num_sunspots",
+                }
+            )
 
             # filter out rows without region_number (required field)
             initial_count = len(df)

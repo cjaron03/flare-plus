@@ -146,7 +146,9 @@ class DataPersister:
                         latitude=row.get("latitude") if pd.notna(row.get("latitude")) else None,
                         longitude=row.get("longitude") if pd.notna(row.get("longitude")) else None,
                         mcintosh_class=row.get("mcintosh_class") if pd.notna(row.get("mcintosh_class")) else None,
-                        mount_wilson_class=row.get("mount_wilson_class") if pd.notna(row.get("mount_wilson_class")) else None,
+                        mount_wilson_class=(
+                            row.get("mount_wilson_class") if pd.notna(row.get("mount_wilson_class")) else None
+                        ),
                         area=area,
                         num_sunspots=num_sunspots,
                         magnetic_type=row.get("magnetic_type") if pd.notna(row.get("magnetic_type")) else None,
