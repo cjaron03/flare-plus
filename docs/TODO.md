@@ -4,8 +4,8 @@
 - [x] Inventory NOAA/SWPC endpoints for GOES XRS flux, sunspot classifications, magnetograms; document auth + cadence.
   - ✅ GOES XRS flux endpoints documented (`goes_xrs_7day`, `goes_xrs_6hour`)
   - ✅ Solar regions endpoint documented (`solar_regions`)
+  - ✅ Magnetograms endpoint implemented (`MagnetogramFetcher` extracts magnetic field data from solar regions)
   - ✅ Auth documented (public, no API keys required)
-  - ⚠️ Magnetograms endpoint not yet implemented
   - ⚠️ Cadence documentation incomplete (update interval exists but not fully documented)
 - [x] Build data fetcher with caching (24-48h window, plus historical backfill) and persistence (e.g., parquet or postgres).
   - ✅ Fetchers implemented (`GOESXRayFetcher`, `SolarRegionFetcher`)
