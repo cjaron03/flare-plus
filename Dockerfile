@@ -23,16 +23,22 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt requirements-dev.txt ./
 
 # install dependencies with uv cache mount for speed
-# use cpu-only xgboost wheel to avoid cuda bloat and compilation time
+# ensure numpy installs correctly before other packages that depend on it
 ARG INSTALL_DEV=true
 ENV CUDA_VISIBLE_DEVICES="" \
     FORCE_CUDA=0
 RUN --mount=type=cache,target=/root/.cache/uv \
+    # install numpy first to ensure C extensions are built correctly \
+    uv pip install numpy==1.26.4 && \
+    # verify numpy works \
+    python -c "import numpy; print(f'numpy {numpy.__version__} OK')" && \
     if [ "$INSTALL_DEV" = "true" ]; then \
-      uv pip install --python-platform linux -r requirements-dev.txt; \
+      uv pip install -r requirements-dev.txt; \
     else \
-      uv pip install --python-platform linux -r requirements.txt; \
-    fi
+      uv pip install -r requirements.txt; \
+    fi && \
+    # verify numpy still works after installing other packages \
+    python -c "import numpy; import pandas; print('numpy/pandas OK')"
 
 # ===== RUNTIME STAGE =====
 FROM python:3.9-slim
