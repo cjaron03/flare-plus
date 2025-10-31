@@ -1,10 +1,10 @@
-# flare+ solar flare prediction system
+# flare-plus solar flare prediction system
 
 a machine learning system for predicting solar flares using noaa/swpc data.
 
 ## overview
 
-flare+ implements short-term (24-48h) classification and time-to-event modeling for solar flare prediction. the system ingests real-time data from noaa goes satellites and solar region observations to predict flare probability and timing.
+flare-plus implements short-term (24-48h) classification and time-to-event modeling for solar flare prediction. the system ingests real-time data from noaa goes satellites and solar region observations to predict flare probability and timing.
 
 ## features
 
@@ -34,7 +34,7 @@ flare+ implements short-term (24-48h) classification and time-to-event modeling 
 ## project structure
 
 ```
-flare+/
+flare-plus/
 ├── src/
 │   ├── data/           # data ingestion, persistence, and flare detection
 │   ├── features/       # feature engineering (complexity, trends, rolling stats)
@@ -71,7 +71,7 @@ flare+/
 
 1. clone the repository:
 ```bash
-cd "Flare"
+cd "flare-plus"
 ```
 
 2. create virtual environment:
@@ -83,12 +83,16 @@ source venv/bin/activate  # on windows: venv\Scripts\activate
 3. install dependencies:
 ```bash
 pip install -r requirements.txt
+
+# for development (includes linting/formatting tools)
+pip install -r requirements-dev.txt
 ```
 
 4. configure environment:
 ```bash
-cp .env.example .env
-# edit .env with your database credentials
+# create .env file with database credentials
+# example contents:
+# DATABASE_URL=postgresql://user:password@localhost:5432/flare_prediction
 ```
 
 5. initialize database:
@@ -185,12 +189,12 @@ probability distribution (flare in time bucket):
 use the classification pipeline to train short-term (24-48h) flare prediction models:
 ```python
 from src.models.pipeline import ClassificationPipeline
-from datetime import datetime, timedelta
+from datetime import datetime
 
 pipeline = ClassificationPipeline()
 dataset = pipeline.prepare_dataset(
     start_date=datetime(2024, 1, 1),
-    end_date=datetime.utcnow(),
+    end_date=datetime.now(),  # or datetime.utcnow() for UTC
     sample_interval_hours=1,
 )
 
@@ -202,7 +206,7 @@ results = pipeline.train_and_evaluate(dataset, test_size=0.2)
 configure scheduled updates using cron or system scheduler:
 ```bash
 # example cron job - run every hour
-0 * * * * cd /path/to/flare+ && docker-compose exec app python scripts/run_ingestion.py
+0 * * * * cd /path/to/flare-plus && docker-compose exec app python scripts/run_ingestion.py
 ```
 
 ## data sources
@@ -260,6 +264,19 @@ no api keys required - data is publicly accessible.
 - [ ] experiment tracking: mlflow/weights & biases integration
 
 see `docs/TODO.md` for the complete roadmap.
+
+## development setup
+
+### pre-commit hooks
+
+install pre-commit hooks for automatic code formatting:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+this will automatically format code with black before each commit, preventing formatting issues in ci.
 
 ## contributing
 
