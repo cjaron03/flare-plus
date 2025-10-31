@@ -9,6 +9,10 @@ from src.models.evaluation import (
     ModelEvaluator,
 )
 from src.models.pipeline import ClassificationPipeline
+from src.models.survival_labeling import SurvivalLabeler
+from src.models.time_varying_covariates import TimeVaryingCovariateEngineer
+from src.models.survival_models import CoxProportionalHazards, GradientBoostingSurvival
+from src.models.survival_pipeline import SurvivalAnalysisPipeline
 
 __all__ = [
     "create_labels",
@@ -19,6 +23,11 @@ __all__ = [
     "calibrate_probabilities",
     "ModelEvaluator",
     "ClassificationPipeline",
+    "SurvivalLabeler",
+    "TimeVaryingCovariateEngineer",
+    "CoxProportionalHazards",
+    "GradientBoostingSurvival",
+    "SurvivalAnalysisPipeline",
 ]
 # fmt: on
 

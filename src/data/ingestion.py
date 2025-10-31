@@ -8,6 +8,7 @@ from src.config import DataConfig
 from src.data.fetchers import GOESXRayFetcher, SolarRegionFetcher, MagnetogramFetcher, load_cache, save_cache
 from src.data.persistence import DataPersister
 from src.data.database import init_database
+from src.data.flare_detector import FlareDetector
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class DataIngestionPipeline:
         self.xray_fetcher = GOESXRayFetcher()
         self.region_fetcher = SolarRegionFetcher()
         self.magnetogram_fetcher = MagnetogramFetcher()
+        self.flare_detector = FlareDetector()
         self.persister = DataPersister()
 
     def run_incremental_update(self, use_cache: bool = True) -> dict:
@@ -32,7 +34,13 @@ class DataIngestionPipeline:
             dict with ingestion statistics
         """
         logger.info("starting incremental data update")
-        results = {"xray_flux": None, "solar_regions": None, "magnetogram": None, "timestamp": datetime.utcnow()}
+        results = {
+            "xray_flux": None,
+            "solar_regions": None,
+            "magnetogram": None,
+            "flare_events": None,
+            "timestamp": datetime.utcnow(),
+        }
 
         # fetch and save xray flux data
         try:
@@ -52,6 +60,22 @@ class DataIngestionPipeline:
 
             if xray_data is not None and len(xray_data) > 0:
                 results["xray_flux"] = self.persister.save_xray_flux(xray_data)
+
+                # detect flare events from flux data
+                try:
+                    logger.info("detecting flare events from x-ray flux data")
+                    flares_df = self.flare_detector.detect_flares_from_flux(xray_data, min_class="C")
+
+                    if flares_df is not None and len(flares_df) > 0:
+                        results["flare_events"] = self.persister.save_flare_events(flares_df)
+                        logger.info(f"detected and saved {len(flares_df)} flare events")
+                    else:
+                        logger.info("no flare events detected in current data window")
+                        results["flare_events"] = {"status": "success", "records_inserted": 0}
+
+                except Exception as e:
+                    logger.error(f"error detecting flare events: {e}")
+                    results["flare_events"] = {"status": "failure", "error": str(e)}
             else:
                 logger.warning("no xray flux data available")
 
