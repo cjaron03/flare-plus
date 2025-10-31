@@ -1,7 +1,7 @@
 """database schema definitions for flare+ data storage."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Index
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -58,7 +58,10 @@ class SolarRegion(Base):
     ingested_at = Column(DateTime, default=datetime.utcnow)
 
     # composite unique constraint
-    __table_args__ = (Index("ix_region_timestamp", "region_number", "timestamp"),)
+    __table_args__ = (
+        UniqueConstraint("region_number", "timestamp", name="uq_region_timestamp"),
+        Index("ix_region_timestamp", "region_number", "timestamp"),
+    )
 
     def __repr__(self):
         return f"<SolarRegion(region={self.region_number}, timestamp={self.timestamp})>"
@@ -123,7 +126,10 @@ class SolarMagnetogram(Base):
     ingested_at = Column(DateTime, default=datetime.utcnow)
 
     # composite unique constraint
-    __table_args__ = (Index("ix_magnetogram_region_timestamp", "region_number", "timestamp"),)
+    __table_args__ = (
+        UniqueConstraint("region_number", "timestamp", name="uq_magnetogram_region_timestamp"),
+        Index("ix_magnetogram_region_timestamp", "region_number", "timestamp"),
+    )
 
     def __repr__(self):
         return f"<SolarMagnetogram(region={self.region_number}, timestamp={self.timestamp})>"
