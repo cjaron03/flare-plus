@@ -57,9 +57,29 @@
   - [OK] End-to-end pipeline (`ClassificationPipeline`) for training and evaluation
 
 ## Time-to-Event Modeling
-- [ ] Define target windows for next X-class flare; experiment with survival analysis or hazard models.
-- [ ] Engineer time-varying covariates from recent conditions; compare Cox PH vs gradient boosting survival.
-- [ ] Produce probability distribution over time buckets; validate with concordance index.
+- [x] Define target windows for next X-class flare; experiment with survival analysis or hazard models.
+  - [OK] Survival labeling implemented (`SurvivalLabeler`) with configurable target flare class (default: X, supports M/C)
+  - [OK] Configurable observation window (default: 168 hours / 7 days)
+  - [OK] Handles both event observations and censored observations
+  - [OK] Time-to-event labels computed: duration (hours to event) and event indicator (1=occurred, 0=censored)
+  - [OK] Automatic flare detection from X-ray flux data (`FlareDetector`) for historical data
+- [x] Engineer time-varying covariates from recent conditions; compare Cox PH vs gradient boosting survival.
+  - [OK] Time-varying covariates implemented (`TimeVaryingCovariateEngineer`)
+  - [OK] Recent flux metrics (mean, max, trend) over multiple lookback windows
+  - [OK] Recent region complexity metrics (McIntosh, Mount Wilson) over lookback windows
+  - [OK] Recent flare history (counts, max class, hours since last flare)
+  - [OK] Cox Proportional Hazards model implemented (`CoxProportionalHazards`)
+  - [OK] Gradient Boosting Survival model implemented (`GradientBoostingSurvival`)
+  - [OK] Model comparison and evaluation framework
+  - [OK] Progress bars for batch processing with tqdm
+- [x] Produce probability distribution over time buckets; validate with concordance index.
+  - [OK] Probability distribution over time buckets implemented (6h, 12h, 24h, 48h, 72h, 96h, 120h, 168h)
+  - [OK] Survival function prediction from both models
+  - [OK] Concordance index (C-index) validation for both models
+  - [OK] End-to-end pipeline (`SurvivalAnalysisPipeline`) for training, evaluation, and prediction
+  - [OK] Command-line script for training and prediction (`scripts/train_and_predict_survival.py`)
+  - [OK] Model persistence (save/load trained models)
+  - [OK] Flexible flare class targeting (X/M/C) with automatic data availability checking
 
 ## Model Serving
 - [ ] Wrap models behind a single prediction service exposing both probability endpoints.

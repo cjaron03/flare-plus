@@ -15,6 +15,8 @@ scipy==1.13.1
 # xgboost installed separately from source to avoid cuda dependencies
 lightgbm>=4.1.0,<5.0.0
 imbalanced-learn>=0.11.0
+# survival analysis
+lifelines>=0.27.8
 
 # api
 flask>=3.0.0
@@ -25,3 +27,4 @@ gunicorn>=21.2.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 schedule>=1.2.0
+tqdm>=4.66.0

@@ -1,7 +1,7 @@
 """data persistence layer for storing fetched data in postgresql."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import pandas as pd
@@ -232,6 +232,86 @@ class DataPersister:
                 source_name=source_name,
                 data_start=df["timestamp"].min() if len(df) > 0 and "timestamp" in df else None,
                 data_end=df["timestamp"].max() if len(df) > 0 and "timestamp" in df else None,
+                duration=duration,
+                **stats,
+            )
+
+        return stats
+
+    def save_flare_events(self, df: pd.DataFrame, source_name: str = "auto_detected") -> dict:
+        """
+        save flare event data to database.
+
+        args:
+            df: dataframe with flare event data
+            source_name: name of data source for logging
+
+        returns:
+            dict with save statistics
+        """
+        start_time = datetime.utcnow()
+        stats = {
+            "records_fetched": len(df),
+            "records_inserted": 0,
+            "records_updated": 0,
+            "status": "success",
+            "error_message": None,
+        }
+
+        try:
+            with self.db.get_session() as session:
+                for _, row in df.iterrows():
+                    # check if flare already exists (same peak_time within 30 minutes)
+                    peak_time = row["peak_time"]
+                    if hasattr(peak_time, "to_pydatetime"):
+                        peak_time = peak_time.to_pydatetime()
+                    elif not isinstance(peak_time, datetime):
+                        peak_time = pd.to_datetime(peak_time).to_pydatetime()
+
+                    existing = (
+                        session.query(FlareEvent)
+                        .filter(
+                            FlareEvent.peak_time >= peak_time - timedelta(minutes=30),
+                            FlareEvent.peak_time <= peak_time + timedelta(minutes=30),
+                            FlareEvent.class_category == row["class_category"],
+                        )
+                        .first()
+                    )
+
+                    if existing:
+                        continue  # skip duplicate
+
+                    flare = FlareEvent(
+                        start_time=row.get("start_time"),
+                        peak_time=row.get("peak_time"),
+                        end_time=row.get("end_time"),
+                        flare_class=row.get("flare_class"),
+                        class_category=row.get("class_category"),
+                        class_magnitude=row.get("class_magnitude"),
+                        active_region=row.get("active_region"),
+                        location=None,  # could be enhanced with heliographic coordinates
+                        source=row.get("source", source_name),
+                        verified=row.get("verified", False),
+                    )
+
+                    session.add(flare)
+                    stats["records_inserted"] += 1
+
+                session.commit()
+
+            logger.info(f"saved {stats['records_inserted']} flare event records")
+
+        except Exception as e:
+            stats["status"] = "failure"
+            stats["error_message"] = str(e)
+            logger.error(f"failed to save flare event data: {e}")
+
+        finally:
+            duration = (datetime.utcnow() - start_time).total_seconds()
+            self._log_ingestion(
+                source_name=source_name,
+                data_start=df["start_time"].min() if len(df) > 0 and "start_time" in df else None,
+                data_end=df["end_time"].max() if len(df) > 0 and "end_time" in df else None,
                 duration=duration,
                 **stats,
             )
