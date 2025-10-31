@@ -18,6 +18,7 @@ except ImportError:
     def tqdm(iterable, *args, **kwargs):
         return iterable
 
+
 from src.data.database import get_database
 from src.data.schema import GOESXRayFlux, SolarRegion, FlareEvent, DataIngestionLog, SolarMagnetogram
 
@@ -30,9 +31,7 @@ class DataPersister:
     def __init__(self):
         self.db = get_database()
 
-    def save_xray_flux(
-        self, df: pd.DataFrame, source_name: str = "noaa_goes_xrs", show_progress: bool = False
-    ) -> dict:
+    def save_xray_flux(self, df: pd.DataFrame, source_name: str = "noaa_goes_xrs", show_progress: bool = False) -> dict:
         """
         save goes x-ray flux data to database.
 

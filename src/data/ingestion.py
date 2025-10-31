@@ -14,6 +14,7 @@ except ImportError:
     def tqdm(iterable, *args, **kwargs):
         return iterable
 
+
 from src.config import DataConfig
 from src.data.fetchers import GOESXRayFetcher, SolarRegionFetcher, MagnetogramFetcher, load_cache, save_cache
 from src.data.persistence import DataPersister
@@ -87,7 +88,9 @@ class DataIngestionPipeline:
                             if inserted > 0:
                                 print(f"detected {len(flares_df)} flares, saved {inserted} new                    ")
                             else:
-                                print(f"detected {len(flares_df)} flares, all duplicates (already in DB)                    ")
+                                print(
+                                    f"detected {len(flares_df)} flares, all duplicates (already in DB)                    "
+                                )
                     else:
                         if HAS_TQDM:
                             print("no flare events detected in current window           ")
@@ -135,9 +138,7 @@ class DataIngestionPipeline:
                         if use_cache:
                             save_cache(magnetogram_data, magnetogram_cache_name)
 
-                        results["magnetogram"] = self.persister.save_magnetogram(
-                            magnetogram_data, show_progress=True
-                        )
+                        results["magnetogram"] = self.persister.save_magnetogram(magnetogram_data, show_progress=True)
                     else:
                         logger.warning("no magnetogram data extracted")
                 except Exception as e:
