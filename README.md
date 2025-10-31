@@ -71,7 +71,7 @@ flare+/
 
 1. clone the repository:
 ```bash
-cd "Flare"
+cd "flare-plus"
 ```
 
 2. create virtual environment:
