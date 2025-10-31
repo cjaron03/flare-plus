@@ -83,6 +83,9 @@ source venv/bin/activate  # on windows: venv\Scripts\activate
 3. install dependencies:
 ```bash
 pip install -r requirements.txt
+
+# for development (includes linting/formatting tools)
+pip install -r requirements-dev.txt
 ```
 
 4. configure environment:
@@ -260,6 +263,19 @@ no api keys required - data is publicly accessible.
 - [ ] experiment tracking: mlflow/weights & biases integration
 
 see `docs/TODO.md` for the complete roadmap.
+
+## development setup
+
+### pre-commit hooks
+
+install pre-commit hooks for automatic code formatting:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+this will automatically format code with black before each commit, preventing formatting issues in ci.
 
 ## contributing
 
