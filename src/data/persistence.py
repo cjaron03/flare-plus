@@ -252,7 +252,7 @@ class DataPersister:
                 for _, row in iterable:
                     timestamp = row.get("timestamp", datetime.utcnow())
                     region_number = row.get("region_number")
-                    
+
                     if pd.isna(region_number) or region_number is None:
                         continue
 
