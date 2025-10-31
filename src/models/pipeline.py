@@ -187,9 +187,10 @@ class ClassificationPipeline:
             )
 
             logger.info(f"train size: {len(X_train)}, test size: {len(X_test)}")
-            logger.info(
-                f"class distribution (train): {dict(zip(classes, *np.unique(y_train, return_counts=True)))}"
-            )
+            # fix: correctly map classes to counts
+            unique_labels, counts = np.unique(y_train, return_counts=True)
+            class_dist = dict(zip([classes[i] for i in unique_labels], counts))
+            logger.info(f"class distribution (train): {class_dist}")
 
             # train models
             window_results = {}
@@ -227,12 +228,15 @@ class ClassificationPipeline:
                             reliability_dir, f"reliability_{window}h_{model_type}.png"
                         )
 
+                    # fix: pass training data for calibration, test data for evaluation
                     evaluation_results = self.evaluator.evaluate_model(
                         model,
                         X_test,
                         y_test,
                         classes=classes,
                         calibrate=self.calibrate,
+                        X_calibration=X_train,  # use training data for calibration
+                        y_calibration=y_train,  # use training labels for calibration
                         plot_reliability=plot_reliability,
                         reliability_filepath=reliability_filepath,
                     )

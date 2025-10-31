@@ -285,7 +285,9 @@ class ModelTrainer:
                         model, info = self.train_with_smote(X, y, model_type="logistic")
                     else:
                         model, info = self.train_logistic_regression(X, y)
-                    trained_models["logistic_regression"] = (model, info)
+                    # use consistent key name for lookup
+                    trained_models["logistic"] = (model, info)
+                    trained_models["logistic_regression"] = (model, info)  # keep backward compatibility
 
                 elif model_type == "gradient_boosting":
                     if self.use_smote:
