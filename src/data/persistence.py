@@ -8,6 +8,16 @@ import pandas as pd
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 
+try:
+    from tqdm import tqdm
+
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 from src.data.database import get_database
 from src.data.schema import GOESXRayFlux, SolarRegion, FlareEvent, DataIngestionLog, SolarMagnetogram
 
@@ -20,7 +30,9 @@ class DataPersister:
     def __init__(self):
         self.db = get_database()
 
-    def save_xray_flux(self, df: pd.DataFrame, source_name: str = "noaa_goes_xrs") -> dict:
+    def save_xray_flux(
+        self, df: pd.DataFrame, source_name: str = "noaa_goes_xrs", show_progress: bool = False
+    ) -> dict:
         """
         save goes x-ray flux data to database.
 
@@ -42,7 +54,11 @@ class DataPersister:
 
         try:
             with self.db.get_session() as session:
-                for _, row in df.iterrows():
+                iterable = df.iterrows()
+                if show_progress and HAS_TQDM and len(df) > 100:
+                    iterable = tqdm(df.iterrows(), total=len(df), desc="saving flux data", unit="record")
+
+                for _, row in iterable:
                     # prepare data
                     data = {
                         "timestamp": row["timestamp"],
@@ -72,7 +88,8 @@ class DataPersister:
 
                 session.commit()
 
-            logger.info(f"saved {stats['records_inserted']} xray flux records")
+            if not show_progress or not HAS_TQDM:
+                logger.debug(f"saved {stats['records_inserted']} xray flux records")
 
         except Exception as e:
             stats["status"] = "failure"
@@ -92,7 +109,9 @@ class DataPersister:
 
         return stats
 
-    def save_solar_regions(self, df: pd.DataFrame, source_name: str = "noaa_solar_regions") -> dict:
+    def save_solar_regions(
+        self, df: pd.DataFrame, source_name: str = "noaa_solar_regions", show_progress: bool = False
+    ) -> dict:
         """
         save solar region data to database.
 
@@ -114,7 +133,11 @@ class DataPersister:
 
         try:
             with self.db.get_session() as session:
-                for _, row in df.iterrows():
+                iterable = df.iterrows()
+                if show_progress and HAS_TQDM and len(df) > 50:
+                    iterable = tqdm(df.iterrows(), total=len(df), desc="saving regions", unit="region")
+
+                for _, row in iterable:
                     # skip rows without required region_number
                     region_number = row.get("region_number")
                     if pd.isna(region_number) or region_number is None:
@@ -159,7 +182,8 @@ class DataPersister:
 
                 session.commit()
 
-            logger.info(f"saved {stats['records_inserted']} solar region records")
+            if not show_progress or not HAS_TQDM:
+                logger.debug(f"saved {stats['records_inserted']} solar region records")
 
         except Exception as e:
             stats["status"] = "failure"
@@ -178,7 +202,9 @@ class DataPersister:
 
         return stats
 
-    def save_magnetogram(self, df: pd.DataFrame, source_name: str = "noaa_magnetogram") -> dict:
+    def save_magnetogram(
+        self, df: pd.DataFrame, source_name: str = "noaa_magnetogram", show_progress: bool = False
+    ) -> dict:
         """
         save magnetogram data to database.
 
@@ -200,7 +226,11 @@ class DataPersister:
 
         try:
             with self.db.get_session() as session:
-                for _, row in df.iterrows():
+                iterable = df.iterrows()
+                if show_progress and HAS_TQDM and len(df) > 50:
+                    iterable = tqdm(df.iterrows(), total=len(df), desc="saving magnetograms", unit="record")
+
+                for _, row in iterable:
                     magnetogram = SolarMagnetogram(
                         timestamp=row.get("timestamp", datetime.utcnow()),
                         region_number=row.get("region_number"),
@@ -219,7 +249,8 @@ class DataPersister:
 
                 session.commit()
 
-            logger.info(f"saved {stats['records_inserted']} magnetogram records")
+            if not show_progress or not HAS_TQDM:
+                logger.debug(f"saved {stats['records_inserted']} magnetogram records")
 
         except Exception as e:
             stats["status"] = "failure"
@@ -279,6 +310,7 @@ class DataPersister:
                     )
 
                     if existing:
+                        stats["records_updated"] += 1  # track duplicates
                         continue  # skip duplicate
 
                     flare = FlareEvent(
