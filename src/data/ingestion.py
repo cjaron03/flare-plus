@@ -183,7 +183,7 @@ def main():
     """main entry point for data ingestion."""
     setup_logging()
 
-    print("\nflare+ data ingestion")
+    print("\nflare-plus data ingestion")
     print("=" * 60)
 
     # initialize database
