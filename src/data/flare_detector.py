@@ -174,8 +174,8 @@ class FlareDetector:
         lookback = min(60, peak_idx)  # max 60 samples back (about 5 hours)
         start_idx = max(0, peak_idx - lookback)
 
-        flux_values = flux_df["flux_long"].values[start_idx:peak_idx + 1]
-        timestamps = flux_df["timestamp"].values[start_idx:peak_idx + 1]
+        flux_values = flux_df["flux_long"].values[start_idx : peak_idx + 1]
+        timestamps = flux_df["timestamp"].values[start_idx : peak_idx + 1]
 
         # find when flux was at 10% of peak (start of rise)
         threshold = peak_flux * 0.1
@@ -184,13 +184,13 @@ class FlareDetector:
             if flux_values[i] < threshold:
                 ts = timestamps[i] if i < len(timestamps) else timestamps[0]
                 # convert pandas Timestamp to datetime if needed
-                if hasattr(ts, 'to_pydatetime'):
+                if hasattr(ts, "to_pydatetime"):
                     return ts.to_pydatetime()
                 return ts
 
         # fallback: use first timestamp in range
         ts = timestamps[0]
-        if hasattr(ts, 'to_pydatetime'):
+        if hasattr(ts, "to_pydatetime"):
             return ts.to_pydatetime()
         return ts
 
@@ -225,13 +225,13 @@ class FlareDetector:
             if flux_values[i] < threshold:
                 ts = timestamps[i] if i < len(timestamps) else timestamps[-1]
                 # convert pandas Timestamp to datetime if needed
-                if hasattr(ts, 'to_pydatetime'):
+                if hasattr(ts, "to_pydatetime"):
                     return ts.to_pydatetime()
                 return ts
 
         # fallback: use last timestamp in range
         ts = timestamps[-1] if len(timestamps) > 0 else flux_df["timestamp"].iloc[-1]
-        if hasattr(ts, 'to_pydatetime'):
+        if hasattr(ts, "to_pydatetime"):
             return ts.to_pydatetime()
         return ts
 
@@ -250,9 +250,9 @@ class FlareDetector:
 
             # look for regions within 6 hours
             window = timedelta(hours=6)
-            
+
             # ensure timestamp is datetime, not pandas Timestamp
-            if hasattr(timestamp, 'to_pydatetime'):
+            if hasattr(timestamp, "to_pydatetime"):
                 timestamp = timestamp.to_pydatetime()
             elif not isinstance(timestamp, datetime):
                 timestamp = pd.to_datetime(timestamp).to_pydatetime()
@@ -361,4 +361,3 @@ class FlareDetector:
         except Exception as e:
             logger.error(f"error detecting flares from database: {e}")
             return pd.DataFrame()
-

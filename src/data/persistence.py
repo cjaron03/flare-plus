@@ -263,7 +263,7 @@ class DataPersister:
                 for _, row in df.iterrows():
                     # check if flare already exists (same peak_time within 30 minutes)
                     peak_time = row["peak_time"]
-                    if hasattr(peak_time, 'to_pydatetime'):
+                    if hasattr(peak_time, "to_pydatetime"):
                         peak_time = peak_time.to_pydatetime()
                     elif not isinstance(peak_time, datetime):
                         peak_time = pd.to_datetime(peak_time).to_pydatetime()
