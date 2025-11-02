@@ -97,36 +97,43 @@ def get_historical_timestamps(
         return timestamps
 
 
-def check_data_availability(start_date: datetime, end_date: datetime) -> dict:
+def check_data_availability(start_date: datetime, end_date: datetime, target_class: str = "X") -> dict:
     """
-    check if we have enough data (especially x-class flares) for training.
+    check if we have enough data for training.
 
     args:
         start_date: start of period
         end_date: end of period
+        target_class: target flare class to check
 
     returns:
         dict with data availability stats
     """
     db = get_database()
     stats = {
+        "c_class_flares": 0,
+        "m_class_flares": 0,
         "x_class_flares": 0,
+        "target_class_flares": 0,
         "total_flares": 0,
         "period_days": (end_date - start_date).days,
+        "sufficient": False,
     }
 
     try:
         with db.get_session() as session:
-            # count x-class flares in period
-            x_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                    FlareEvent.class_category == "X",
+            # count flares by class
+            for flare_class in ["C", "M", "X"]:
+                count = (
+                    session.query(FlareEvent)
+                    .filter(
+                        FlareEvent.start_time >= start_date,
+                        FlareEvent.start_time <= end_date,
+                        FlareEvent.class_category == flare_class,
+                    )
+                    .count()
                 )
-                .count()
-            )
+                stats[f"{flare_class.lower()}_class_flares"] = count
 
             # count total flares
             total_flares = (
@@ -138,8 +145,12 @@ def check_data_availability(start_date: datetime, end_date: datetime) -> dict:
                 .count()
             )
 
-            stats["x_class_flares"] = x_flares
             stats["total_flares"] = total_flares
+            stats["target_class_flares"] = stats[f"{target_class.lower()}_class_flares"]
+
+            # check if sufficient for training
+            min_required = {"C": 200, "M": 50, "X": 10}
+            stats["sufficient"] = stats["target_class_flares"] >= min_required.get(target_class, 10)
 
     except Exception as e:
         logger.error(f"error checking data availability: {e}")
@@ -171,38 +182,38 @@ def train_model(
     logger.info(f"training survival model from {start_date} to {end_date}")
     logger.info(f"target flare class: {target_flare_class}")
 
-    # check data availability for target class
-    db = get_database()
-    try:
-        with db.get_session() as session:
-            target_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                    FlareEvent.class_category == target_flare_class,
-                )
-                .count()
-            )
-            total_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                )
-                .count()
-            )
-    except Exception as e:
-        logger.error(f"error checking data availability: {e}")
-        target_flares = 0
-        total_flares = 0
+    # check data availability
+    stats = check_data_availability(start_date, end_date, target_flare_class)
 
-    logger.info(
-        f"data availability: {target_flares} {target_flare_class}-class flares, "
-        f"{total_flares} total flares"
-    )
+    print("\n" + "=" * 70)
+    print("DATA AVAILABILITY CHECK")
+    print("=" * 70)
+    print(f"Period: {start_date.date()} to {end_date.date()} ({stats['period_days']} days)")
+    print(f"C-class flares: {stats['c_class_flares']}")
+    print(f"M-class flares: {stats['m_class_flares']}")
+    print(f"X-class flares: {stats['x_class_flares']}")
+    print(f"Target ({target_flare_class}-class): {stats['target_class_flares']}")
+    print("=" * 70)
+
+    min_required = {"C": 200, "M": 50, "X": 10}
+    required = min_required.get(target_flare_class, 10)
+
+    if not stats["sufficient"]:
+        print("\nWARNING: INSUFFICIENT TRAINING DATA")
+        print(f"You have {stats['target_class_flares']} {target_flare_class}-class flares")
+        print(f"Minimum recommended: {required}")
+        print("\nThis model will likely OVERFIT and produce unreliable predictions.")
+        print("Predictions are for DEMONSTRATION/LEARNING purposes only.")
+        print("\nSee docs/DATA_COLLECTION_GUIDE.md for how to get more data.")
+        print("=" * 70)
+        print("\nProceeding with training (demonstration mode)...")
+        print("=" * 70 + "\n")
+    else:
+        print(f"\n[OK] Sufficient data for {target_flare_class}-class training")
+        print("=" * 70 + "\n")
 
     # check what classes we actually have
+    db = get_database()
     try:
         with db.get_session() as session:
             class_counts = (
@@ -221,12 +232,16 @@ def train_model(
     except Exception as e:
         logger.debug(f"error getting class breakdown: {e}")
 
+    # use stats from check_data_availability
+    target_flares = stats["target_class_flares"]
+    total_flares = stats["total_flares"]
+
     if target_flares < 5:
         logger.warning(
             f"low {target_flare_class}-class flare count ({target_flares}). "
             "model may not train well. consider using --target-class C (most common)."
         )
-        
+
         # suggest using C-class if we have any
         if total_flares > 0 and target_flares == 0:
             logger.warning(
@@ -416,7 +431,11 @@ def format_prediction(prediction: dict) -> str:
     sorted_buckets = sorted(prob_dist.items(), key=lambda x: float(x[0].split("-")[0].replace("h", "")))
 
     for bucket, prob in sorted_buckets:
-        lines.append(f"  {bucket:15s} {prob*100:6.2f}%")
+        # show more precision if probabilities are very small
+        if prob > 0 and prob < 0.01:
+            lines.append(f"  {bucket:15s} {prob*100:6.4f}%")
+        else:
+            lines.append(f"  {bucket:15s} {prob*100:6.2f}%")
 
     lines.append("")
     lines.append("interpretation:")

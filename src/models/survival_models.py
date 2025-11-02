@@ -115,15 +115,40 @@ class CoxProportionalHazards:
         # lifelines returns DataFrame with time index and columns for each sample
         survival_df = self.model.predict_survival_function(df_features)
 
-        # convert to array format
-        if time_points is None:
+        # lifelines returns DataFrame with time as index (in hours from training data)
+        lifelines_time_points = survival_df.index.values
+        lifelines_survival = survival_df.values.T  # [n_samples, n_time_points_from_lifelines]
+        
+        # debug: log what lifelines actually returns
+        logger.debug(f"lifelines returned {len(lifelines_time_points)} time points: min={lifelines_time_points.min():.2f}h, max={lifelines_time_points.max():.2f}h")
+        logger.debug(f"lifelines survival range: min={lifelines_survival.min():.6f}, max={lifelines_survival.max():.6f}")
+        if len(lifelines_time_points) > 0 and len(lifelines_survival) > 0:
+            logger.debug(f"lifelines survival at boundaries: start={lifelines_survival[0][0]:.6f}, end={lifelines_survival[0][-1]:.6f}")
+
+        # if specific time_points requested, interpolate to those points
+        if time_points is not None:
+            # interpolate survival function to requested time points
+            n_samples = lifelines_survival.shape[0]
+            n_requested = len(time_points)
+            survival_interpolated = np.zeros((n_samples, n_requested))
+            
+            for i in range(n_samples):
+                # interpolate each sample's survival function
+                # get the last survival value for extrapolation (survival shouldn't jump to 0, should decay gradually)
+                last_survival = lifelines_survival[i][-1] if len(lifelines_survival[i]) > 0 else 1.0
+                
+                survival_interpolated[i] = np.interp(
+                    time_points,
+                    lifelines_time_points,
+                    lifelines_survival[i],
+                    left=1.0,  # before first time point, survival = 1.0 (no events yet)
+                    right=last_survival  # after last observed time, use last survival value (extrapolate constant)
+                )
+            
+            return survival_interpolated, time_points
+        else:
             # use time index from survival DataFrame
-            time_points = survival_df.index.values
-
-        # convert DataFrame to array (each column is a survival function)
-        survival_array = survival_df.values.T  # transpose to get [n_samples, n_time_points]
-
-        return survival_array, time_points
+            return lifelines_survival, lifelines_time_points
 
     def predict_partial_hazard(self, df: pd.DataFrame) -> np.ndarray:
         """

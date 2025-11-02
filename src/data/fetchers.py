@@ -356,18 +356,46 @@ class MagnetogramFetcher(NOAAFetcher):
         return None
 
 
+def _check_parquet_support() -> bool:
+    """check if parquet support is available."""
+    try:
+        import pyarrow  # type: ignore
+        return True
+    except ImportError:
+        try:
+            import fastparquet  # type: ignore
+            return True
+        except ImportError:
+            return False
+
+
 def save_cache(data: pd.DataFrame, cache_name: str):
     """
     save dataframe to cache.
+
+    requires pyarrow or fastparquet to be installed for parquet support.
+    install with: pip install pyarrow
 
     args:
         data: dataframe to cache
         cache_name: name for cache file
     """
+    if not _check_parquet_support():
+        logger.warning(
+            "parquet caching is not available: pyarrow or fastparquet is not installed. "
+            "to enable caching, install with: pip install pyarrow"
+        )
+        return
+
     cache_path = CACHE_DIR / f"{cache_name}.parquet"
     try:
         data.to_parquet(cache_path, index=False)
         logger.info(f"cached data to {cache_path}")
+    except ImportError:
+        logger.error(
+            "failed to save cache: parquet support requires pyarrow or fastparquet. "
+            "install with: pip install pyarrow"
+        )
     except Exception as e:
         logger.error(f"failed to save cache: {e}")
 
@@ -376,6 +404,9 @@ def load_cache(cache_name: str, max_age_hours: int = 24) -> Optional[pd.DataFram
     """
     load dataframe from cache if fresh enough.
 
+    requires pyarrow or fastparquet to be installed for parquet support.
+    install with: pip install pyarrow
+
     args:
         cache_name: name of cache file
         max_age_hours: maximum age of cache in hours
@@ -383,6 +414,13 @@ def load_cache(cache_name: str, max_age_hours: int = 24) -> Optional[pd.DataFram
     returns:
         cached dataframe or none if expired/missing
     """
+    if not _check_parquet_support():
+        logger.debug(
+            "parquet caching is not available: pyarrow or fastparquet is not installed. "
+            "skipping cache load. install with: pip install pyarrow"
+        )
+        return None
+
     cache_path = CACHE_DIR / f"{cache_name}.parquet"
 
     if not cache_path.exists():
@@ -400,6 +438,12 @@ def load_cache(cache_name: str, max_age_hours: int = 24) -> Optional[pd.DataFram
         data = pd.read_parquet(cache_path)
         logger.info(f"loaded cache {cache_name} ({cache_age_hours:.1f}h old, {len(data)} records)")
         return data
+    except ImportError:
+        logger.error(
+            "failed to load cache: parquet support requires pyarrow or fastparquet. "
+            "install with: pip install pyarrow"
+        )
+        return None
     except Exception as e:
         logger.error(f"failed to load cache: {e}")
         return None

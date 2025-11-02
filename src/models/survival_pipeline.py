@@ -250,8 +250,28 @@ class SurvivalAnalysisPipeline:
                 # ensure columns are in the same order as training
                 covariates_df = covariates_df[available_features]
             
-            survival_array, time_points = self.cox_model.predict_survival_function(covariates_df)
+            # ensure time_points cover full bucket range (0 to max bucket)
+            if time_buckets is None:
+                time_buckets = self.labeler.time_buckets
+            max_time = max(time_buckets) if time_buckets else 168
+            # request time_points up to max bucket to avoid extrapolation issues
+            requested_time_points = np.linspace(0, max_time, max(int(max_time) + 1, 169))  # at least hourly
+            
+            survival_array, time_points = self.cox_model.predict_survival_function(
+                covariates_df, 
+                time_points=requested_time_points
+            )
             survival_probs = survival_array[0]  # single sample
+            
+            # debug logging
+            logger.info(f"cox survival function: min={survival_probs.min():.6f}, max={survival_probs.max():.6f}")
+            logger.info(f"cox time_points: min={time_points.min():.2f}h, max={time_points.max():.2f}h, count={len(time_points)}")
+            logger.info(f"cox survival at key points: 0h={survival_probs[0]:.6f}, 24h={survival_probs[min(24, len(survival_probs)-1)]:.6f}, 168h={survival_probs[-1]:.6f}")
+            
+            # check if survival is flat
+            survival_range = survival_probs.max() - survival_probs.min()
+            if survival_range < 0.001:
+                logger.warning(f"cox survival function is nearly flat (range={survival_range:.6f}). probabilities will be near zero.")
         elif model_type == "gb":
             # ensure we only use features that were used during training
             if self.gb_model.is_fitted and self.gb_model.feature_cols_ is not None:
@@ -269,7 +289,17 @@ class SurvivalAnalysisPipeline:
                 # ensure columns are in the same order as training
                 covariates_df = covariates_df[available_features]
             
-            survival_array, time_points = self.gb_model.predict_survival_function(covariates_df)
+            # ensure time_points cover full bucket range (0 to max bucket)
+            if time_buckets is None:
+                time_buckets = self.labeler.time_buckets
+            max_time = max(time_buckets) if time_buckets else 168
+            # request time_points up to max bucket
+            requested_time_points = np.linspace(0, max_time, max(int(max_time) + 1, 169))  # at least hourly
+            
+            survival_array, time_points = self.gb_model.predict_survival_function(
+                covariates_df,
+                time_points=requested_time_points
+            )
             survival_probs = survival_array[0]  # single sample
         else:
             raise ValueError(f"unknown model type: {model_type}")
@@ -283,6 +313,27 @@ class SurvivalAnalysisPipeline:
             time_points,
             time_buckets,
         )
+        
+        # debug: check if all probabilities are zero
+        total_prob = sum(prob_dist.values())
+        logger.info(f"total probability across all buckets: {total_prob:.6f}")
+        
+        if total_prob < 0.001:
+            logger.warning(
+                f"total probability across all buckets is very low ({total_prob:.6f}). "
+                f"survival function may be too flat. survival range: [{survival_probs.min():.6f}, {survival_probs.max():.6f}], "
+                f"time_points range: [{time_points.min():.2f}h, {time_points.max():.2f}h]"
+            )
+            # log sample bucket probabilities for debugging
+            sample_buckets = list(prob_dist.items())[:3]
+            logger.info(f"sample bucket probabilities: {sample_buckets}")
+            
+            # log actual survival values at bucket boundaries for debugging
+            if len(time_buckets) > 0:
+                max_bucket = max(time_buckets)
+                bucket_indices = [int(t) for t in time_buckets if t <= time_points.max()]
+                if bucket_indices:
+                    logger.info(f"survival at bucket boundaries: {[(t, survival_probs[min(int(t), len(survival_probs)-1)]) for t in time_buckets[:4]]}")
 
         # also compute hazard (risk) score
         # reuse the filtered covariates_df from above

@@ -282,9 +282,19 @@ class ModelEvaluator:
             else:
                 classes = [f"class_{i}" for i in range(y_prob.shape[1])]
 
+        # store predictions (needed for confusion matrix, etc.)
+        # but store only summary statistics for probabilities to save memory
+        prob_summary = {
+            "mean": y_prob.mean(axis=0).tolist(),
+            "std": y_prob.std(axis=0).tolist(),
+            "min": y_prob.min(axis=0).tolist(),
+            "max": y_prob.max(axis=0).tolist(),
+            "shape": list(y_prob.shape),
+        }
+
         evaluation_results = {
             "predictions": y_pred.tolist(),
-            "probabilities": y_prob.tolist(),
+            "probabilities_summary": prob_summary,  # summary stats instead of full array
             "classes": classes,
         }
 

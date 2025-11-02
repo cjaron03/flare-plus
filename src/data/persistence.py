@@ -356,6 +356,17 @@ class DataPersister:
                         stats["records_updated"] += 1  # track duplicates
                         continue  # skip duplicate
 
+                    # handle NaN values for integer columns (convert to None for postgres)
+                    active_region = row.get("active_region")
+                    if pd.isna(active_region):
+                        active_region = None
+                    elif active_region is not None:
+                        # ensure it's an integer, not float
+                        try:
+                            active_region = int(active_region)
+                        except (ValueError, TypeError):
+                            active_region = None
+
                     flare = FlareEvent(
                         start_time=row.get("start_time"),
                         peak_time=row.get("peak_time"),
@@ -363,7 +374,7 @@ class DataPersister:
                         flare_class=row.get("flare_class"),
                         class_category=row.get("class_category"),
                         class_magnitude=row.get("class_magnitude"),
-                        active_region=row.get("active_region"),
+                        active_region=active_region,
                         location=None,  # could be enhanced with heliographic coordinates
                         source=row.get("source", source_name),
                         verified=row.get("verified", False),
