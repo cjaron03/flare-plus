@@ -7,7 +7,7 @@ from sqlalchemy.orm import declarative_base
 Base = declarative_base()
 
 
-class GOESXRayFlux(Base):
+class GOESXRayFlux(Base):  # type: ignore[misc,valid-type]
     """goes x-ray flux measurements (0.5-4.0Å and 1.0-8.0Å bands)."""
 
     __tablename__ = "flare_goes_xray_flux"
@@ -30,7 +30,7 @@ class GOESXRayFlux(Base):
         return f"<GOESXRayFlux(timestamp={self.timestamp}, flux_long={self.flux_long})>"
 
 
-class SolarRegion(Base):
+class SolarRegion(Base):  # type: ignore[misc,valid-type]
     """active solar regions (sunspot groups) from noaa swpc."""
 
     __tablename__ = "flare_solar_regions"
@@ -67,7 +67,7 @@ class SolarRegion(Base):
         return f"<SolarRegion(region={self.region_number}, timestamp={self.timestamp})>"
 
 
-class FlareEvent(Base):
+class FlareEvent(Base):  # type: ignore[misc,valid-type]
     """observed solar flare events for labeling training data."""
 
     __tablename__ = "flare_events"
@@ -99,7 +99,7 @@ class FlareEvent(Base):
         return f"<FlareEvent(class={self.flare_class}, peak={self.peak_time})>"
 
 
-class SolarMagnetogram(Base):
+class SolarMagnetogram(Base):  # type: ignore[misc,valid-type]
     """solar magnetogram data - magnetic field measurements by region."""
 
     __tablename__ = "flare_solar_magnetogram"
@@ -135,7 +135,7 @@ class SolarMagnetogram(Base):
         return f"<SolarMagnetogram(region={self.region_number}, timestamp={self.timestamp})>"
 
 
-class DataIngestionLog(Base):
+class DataIngestionLog(Base):  # type: ignore[misc,valid-type]
     """log of data ingestion runs for monitoring and debugging."""
 
     __tablename__ = "flare_ingestion_log"

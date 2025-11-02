@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold, GridSearchCV
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE
@@ -38,8 +38,8 @@ class ModelTrainer:
         self.use_smote = use_smote
         self.cv_folds = cv_folds
         self.random_state = random_state
-        self.label_encoders = {}
-        self.models = {}
+        self.label_encoders: Dict[str, Any] = {}
+        self.models: Dict[str, Any] = {}
         self.feature_names = None
 
     def prepare_features_and_labels(
@@ -65,7 +65,7 @@ class ModelTrainer:
         ]
 
         feature_cols = [col for col in features_df.columns if col not in exclude_cols]
-        self.feature_names = feature_cols
+        self.feature_names = feature_cols  # type: ignore[assignment]
 
         # extract features
         X = features_df[feature_cols].values
@@ -343,4 +343,3 @@ def train_baseline_models(
     trainer = ModelTrainer(use_smote=use_smote, cv_folds=cv_folds)
     return trainer.train_baseline_models(features_df, label_column, models)
 # fmt: on
-

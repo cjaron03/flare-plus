@@ -2,8 +2,8 @@
 """time-to-event labeling for survival analysis - time until next X-class flare."""
 
 import logging
-from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 import pandas as pd
 import numpy as np
@@ -12,6 +12,7 @@ try:
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
+
     def tqdm(iterable, *args, **kwargs):
         return iterable
 
@@ -60,7 +61,7 @@ class SurvivalLabeler:
             datetime of next flare, or None if none found within max_time_hours
         """
         try:
-            with self.db.get_session() as session:
+            with self.db.get_session() as session:  # type: ignore[assignment]
                 query = (
                     session.query(FlareEvent)
                     .filter(
@@ -199,7 +200,7 @@ class SurvivalLabeler:
         survival_sorted = survival_function[sort_idx]
 
         prob_dist = {}
-        
+
         # debug: log survival function range if all probabilities are zero
         if len(survival_sorted) > 0:
             logger.debug(f"survival function range: [{survival_sorted.min():.4f}, {survival_sorted.max():.4f}]")
@@ -208,11 +209,8 @@ class SurvivalLabeler:
         for i in range(len(time_buckets) - 1):
             bucket_start = time_buckets[i]
             bucket_end = time_buckets[i + 1]
-            # format bucket label: show "0h-6h" instead of "0.0h-6h"
-            if bucket_start == 0:
-                bucket_label = f"{int(bucket_start)}h-{int(bucket_end)}h"
-            else:
-                bucket_label = f"{int(bucket_start)}h-{int(bucket_end)}h"
+            # format bucket label
+            bucket_label = f"{int(bucket_start)}h-{int(bucket_end)}h"
 
             # find survival probabilities at bucket boundaries
             # interpolate if needed (extrapolate with constant value if outside range)
@@ -222,27 +220,28 @@ class SurvivalLabeler:
             else:
                 # get last survival value for extrapolation (survival shouldn't jump to 0)
                 last_survival = survival_sorted[-1] if len(survival_sorted) > 0 else 1.0
-                
+
                 s_start = np.interp(
-                    bucket_start, 
-                    time_points_sorted, 
+                    bucket_start,
+                    time_points_sorted,
                     survival_sorted,
-                    left=survival_sorted[0] if len(survival_sorted) > 0 else 1.0,  # if before first time point, use first survival value
-                    right=last_survival  # if after last observed time, use last survival value (extrapolate constant)
+                    left=survival_sorted[0] if len(survival_sorted) > 0 else 1.0,
+                    right=last_survival
                 )
                 s_end = np.interp(
                     bucket_end,
                     time_points_sorted,
                     survival_sorted,
-                    left=survival_sorted[0] if len(survival_sorted) > 0 else 1.0,  # if before first time point, use first survival value
-                    right=last_survival  # if after last observed time, use last survival value (extrapolate constant)
+                    left=survival_sorted[0] if len(survival_sorted) > 0 else 1.0,
+                    right=last_survival
                 )
 
                 # probability of event in this bucket = survival at start - survival at end
                 # survival function S(t) = P(T > t), so P(event in [t1, t2]) = S(t1) - S(t2)
                 prob = float(s_start - s_end)
-                
-                # handle edge cases: if survival is constant or increases (shouldn't happen but numerical errors)
+
+                # handle edge cases: if survival is constant or increases
+                # (shouldn't happen but numerical errors)
                 if prob < 0:
                     logger.debug(f"negative probability for {bucket_label}: {prob:.6f} (s_start={s_start:.4f}, s_end={s_end:.4f}), clamping to 0")
                     prob = 0.0
@@ -277,4 +276,3 @@ class SurvivalLabeler:
 
         return result_df
 # fmt: on
-

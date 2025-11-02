@@ -2,7 +2,7 @@
 """survival analysis models - cox proportional hazards and gradient boosting survival."""
 
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, List, Tuple
 import warnings
 
 import pandas as pd
@@ -30,7 +30,7 @@ class CoxProportionalHazards:
         """
         self.model = CoxPHFitter(penalizer=penalizer, l1_ratio=l1_ratio)
         self.is_fitted = False
-        self.feature_cols_ = None  # store feature columns used during training
+        self.feature_cols_: Optional[List[str]] = None  # store feature columns used during training
 
     def fit(self, df: pd.DataFrame, duration_col: str = "duration", event_col: str = "event"):
         """
@@ -83,7 +83,7 @@ class CoxProportionalHazards:
         df: pd.DataFrame,
         duration_col: Optional[str] = None,
         time_points: Optional[np.ndarray] = None,
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         predict survival function for given samples.
 
@@ -118,7 +118,7 @@ class CoxProportionalHazards:
         # lifelines returns DataFrame with time as index (in hours from training data)
         lifelines_time_points = survival_df.index.values
         lifelines_survival = survival_df.values.T  # [n_samples, n_time_points_from_lifelines]
-        
+
         # debug: log what lifelines actually returns
         logger.debug(f"lifelines returned {len(lifelines_time_points)} time points: min={lifelines_time_points.min():.2f}h, max={lifelines_time_points.max():.2f}h")
         logger.debug(f"lifelines survival range: min={lifelines_survival.min():.6f}, max={lifelines_survival.max():.6f}")
@@ -131,12 +131,12 @@ class CoxProportionalHazards:
             n_samples = lifelines_survival.shape[0]
             n_requested = len(time_points)
             survival_interpolated = np.zeros((n_samples, n_requested))
-            
+
             for i in range(n_samples):
                 # interpolate each sample's survival function
                 # get the last survival value for extrapolation (survival shouldn't jump to 0, should decay gradually)
                 last_survival = lifelines_survival[i][-1] if len(lifelines_survival[i]) > 0 else 1.0
-                
+
                 survival_interpolated[i] = np.interp(
                     time_points,
                     lifelines_time_points,
@@ -144,7 +144,7 @@ class CoxProportionalHazards:
                     left=1.0,  # before first time point, survival = 1.0 (no events yet)
                     right=last_survival  # after last observed time, use last survival value (extrapolate constant)
                 )
-            
+
             return survival_interpolated, time_points
         else:
             # use time index from survival DataFrame
@@ -269,7 +269,7 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
         )
 
         self.is_fitted = False
-        self.feature_cols_ = None
+        self.feature_cols_: Optional[List[str]] = None
 
     def _prepare_target(self, df: pd.DataFrame, duration_col: str = "duration", event_col: str = "event") -> np.ndarray:
         """
@@ -469,4 +469,3 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
             }
         ).sort_values("importance", ascending=False)
 # fmt: on
-

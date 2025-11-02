@@ -50,8 +50,8 @@ class ClassificationPipeline:
         self.cv_folds = cv_folds
         self.calibrate = calibrate
         self.random_state = random_state
-        self.models = {}
-        self.evaluation_results = {}
+        self.models: Dict[str, Any] = {}
+        self.evaluation_results: Dict[str, Any] = {}
 
     def prepare_dataset(
         self,
@@ -339,4 +339,3 @@ class ClassificationPipeline:
         }
 
 # fmt: on
-

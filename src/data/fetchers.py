@@ -358,12 +358,12 @@ class MagnetogramFetcher(NOAAFetcher):
 def _check_parquet_support() -> bool:
     """check if parquet support is available."""
     try:
-        import pyarrow  # type: ignore  # noqa: F401
+        import pyarrow  # noqa: F401
 
         return True
     except ImportError:
         try:
-            import fastparquet  # type: ignore  # noqa: F401
+            import fastparquet  # noqa: F401
 
             return True
         except ImportError:

@@ -2,7 +2,7 @@
 """time-varying covariates for survival analysis - features that change over time."""
 
 import logging
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -17,9 +17,8 @@ except ImportError:
 
 from src.config import CONFIG
 from src.data.database import get_database
-from src.data.schema import GOESXRayFlux, SolarRegion, SolarMagnetogram, FlareEvent
+from src.data.schema import GOESXRayFlux, SolarRegion, FlareEvent
 from src.features.complexity import compute_mcintosh_complexity, compute_mount_wilson_complexity
-from src.features.flux_trends import compute_flux_trends
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +240,7 @@ class TimeVaryingCovariateEngineer:
                     (preloaded_data["regions"]["timestamp"] >= cutoff_time) &
                     (preloaded_data["regions"]["timestamp"] <= timestamp)
                 ].copy()
-                
+
                 if region_number is not None:
                     regions_df = regions_df[regions_df["region_number"] == region_number].copy()
             else:
@@ -350,7 +349,7 @@ class TimeVaryingCovariateEngineer:
                     (preloaded_data["flares"]["peak_time"] >= cutoff_time) &
                     (preloaded_data["flares"]["peak_time"] < timestamp)
                 ].copy()
-                
+
                 if region_number is not None:
                     flares_df = flares_df[flares_df["active_region"] == region_number].copy()
             else:
@@ -438,7 +437,7 @@ class TimeVaryingCovariateEngineer:
         returns:
             dataframe with time-varying covariates (single row)
         """
-        covariates = {"timestamp": timestamp}
+        covariates: Dict[str, Any] = {"timestamp": timestamp}
 
         if region_number is not None:
             covariates["region_number"] = region_number
@@ -506,4 +505,3 @@ class TimeVaryingCovariateEngineer:
 
         return pd.concat(covariates_list, ignore_index=True)
 # fmt: on
-
