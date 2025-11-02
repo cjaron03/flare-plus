@@ -1,9 +1,8 @@
 """data fetchers for noaa/swpc endpoints."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional
-from pathlib import Path
 
 import requests
 import pandas as pd
@@ -359,11 +358,13 @@ class MagnetogramFetcher(NOAAFetcher):
 def _check_parquet_support() -> bool:
     """check if parquet support is available."""
     try:
-        import pyarrow  # type: ignore
+        import pyarrow  # type: ignore  # noqa: F401
+
         return True
     except ImportError:
         try:
-            import fastparquet  # type: ignore
+            import fastparquet  # type: ignore  # noqa: F401
+
             return True
         except ImportError:
             return False

@@ -10,13 +10,14 @@ import json
 # add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import logging
-import pandas as pd
-from tqdm import tqdm
-from src.models.survival_pipeline import SurvivalAnalysisPipeline
-from src.data.database import get_database
-from src.data.schema import FlareEvent
-from sqlalchemy import func
+import logging  # noqa: E402
+
+import pandas as pd  # noqa: E402
+from sqlalchemy import func  # noqa: E402
+
+from src.data.database import get_database  # noqa: E402
+from src.data.schema import FlareEvent  # noqa: E402
+from src.models.survival_pipeline import SurvivalAnalysisPipeline  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -257,35 +258,38 @@ def train_model(
 
     # get actual data range first (when we have flux data)
     from src.data.persistence import DataPersister
+
     persister = DataPersister()
     flux_df = persister.get_xray_flux_range(start_date, end_date)
-    
+
     if len(flux_df) == 0:
         raise ValueError("no flux data available in date range - run data ingestion first")
-    
+
     data_start = pd.to_datetime(flux_df["timestamp"].min()).to_pydatetime()
     data_end = pd.to_datetime(flux_df["timestamp"].max()).to_pydatetime()
-    
+
     # max lookback needed is 24 hours (from time_varying_covariates config)
     max_lookback = timedelta(hours=24)
     min_observation_time = data_start + max_lookback
-    
+
     logger.info(f"flux data available from {data_start} to {data_end}")
-    logger.info(f"generating observations from {min_observation_time} (to allow {max_lookback.total_seconds()/3600}h lookback)")
-    
+    logger.info(
+        f"generating observations from {min_observation_time} (to allow {max_lookback.total_seconds()/3600}h lookback)"
+    )
+
     # generate timestamps only within data coverage window
     timestamps = []
-    
+
     # start from min_observation_time (after data start + lookback)
     # end at data_end or end_date, whichever is earlier
     effective_end = min(data_end, end_date)
-    
+
     # generate regular interval timestamps
     current = min_observation_time
     while current <= effective_end:
         timestamps.append(current)
         current += timedelta(hours=interval_hours)
-    
+
     # also add timestamps before detected flares (for event observations)
     try:
         with db.get_session() as session:
@@ -298,14 +302,14 @@ def train_model(
                 .order_by(FlareEvent.start_time)
                 .all()
             )
-            
+
             if flare_times:
                 # add observation timestamps 12h, 24h, 48h before each flare
                 for (flare_time,) in flare_times:
                     # ensure flare_time is datetime
-                    if hasattr(flare_time, 'to_pydatetime'):
+                    if hasattr(flare_time, "to_pydatetime"):
                         flare_time = flare_time.to_pydatetime()
-                    
+
                     # add observations before flares
                     for hours_before in [12, 24, 48]:
                         obs_time = flare_time - timedelta(hours=hours_before)
@@ -313,10 +317,10 @@ def train_model(
                         if obs_time >= min_observation_time and obs_time <= effective_end:
                             if obs_time not in timestamps:
                                 timestamps.append(obs_time)
-    
+
     except Exception as e:
         logger.debug(f"error adding flare-based timestamps: {e}")
-    
+
     timestamps = sorted(set(timestamps))  # remove duplicates and sort
     logger.info(f"generated {len(timestamps)} observation timestamps (with data coverage)")
 
@@ -448,9 +452,7 @@ def format_prediction(prediction: dict) -> str:
 
 def main():
     """main entry point."""
-    parser = argparse.ArgumentParser(
-        description="train survival analysis model and predict x-class flare timing"
-    )
+    parser = argparse.ArgumentParser(description="train survival analysis model and predict x-class flare timing")
     parser.add_argument(
         "--train",
         action="store_true",
@@ -641,4 +643,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

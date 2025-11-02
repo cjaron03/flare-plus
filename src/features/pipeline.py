@@ -1,11 +1,10 @@
 """main feature engineering pipeline."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
 import pandas as pd
-import numpy as np
 
 from src.config import CONFIG
 from src.data.database import get_database
@@ -191,22 +190,38 @@ class FeatureEngineer:
             lookback_hours = max(self.rolling_windows) + 24
             cutoff_time = timestamp - timedelta(hours=lookback_hours)
             data = {
-                "flux": preloaded_data["flux"][
-                    (preloaded_data["flux"]["timestamp"] >= cutoff_time) &
-                    (preloaded_data["flux"]["timestamp"] <= timestamp)
-                ].copy() if len(preloaded_data["flux"]) > 0 else pd.DataFrame(),
-                "regions": preloaded_data["regions"][
-                    (preloaded_data["regions"]["timestamp"] >= cutoff_time) &
-                    (preloaded_data["regions"]["timestamp"] <= timestamp)
-                ].copy() if len(preloaded_data["regions"]) > 0 else pd.DataFrame(),
-                "magnetograms": preloaded_data["magnetograms"][
-                    (preloaded_data["magnetograms"]["timestamp"] >= cutoff_time) &
-                    (preloaded_data["magnetograms"]["timestamp"] <= timestamp)
-                ].copy() if len(preloaded_data["magnetograms"]) > 0 else pd.DataFrame(),
-                "flares": preloaded_data["flares"][
-                    (preloaded_data["flares"]["peak_time"] >= cutoff_time) &
-                    (preloaded_data["flares"]["peak_time"] <= timestamp)
-                ].copy() if len(preloaded_data["flares"]) > 0 else pd.DataFrame(),
+                "flux": (
+                    preloaded_data["flux"][
+                        (preloaded_data["flux"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["flux"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["flux"]) > 0
+                    else pd.DataFrame()
+                ),
+                "regions": (
+                    preloaded_data["regions"][
+                        (preloaded_data["regions"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["regions"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["regions"]) > 0
+                    else pd.DataFrame()
+                ),
+                "magnetograms": (
+                    preloaded_data["magnetograms"][
+                        (preloaded_data["magnetograms"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["magnetograms"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["magnetograms"]) > 0
+                    else pd.DataFrame()
+                ),
+                "flares": (
+                    preloaded_data["flares"][
+                        (preloaded_data["flares"]["peak_time"] >= cutoff_time)
+                        & (preloaded_data["flares"]["peak_time"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["flares"]) > 0
+                    else pd.DataFrame()
+                ),
             }
         else:
             data = self.load_data(timestamp, lookback_hours=max(self.rolling_windows) + 24)
@@ -329,7 +344,9 @@ class FeatureEngineer:
 
         # load all data once for the entire time range
         logger.info(f"bulk loading data for {len(timestamps)} timestamps")
-        preloaded_data = self.load_data(max_timestamp, lookback_hours=lookback_hours + int((max_timestamp - min_timestamp).total_seconds() / 3600))
+        preloaded_data = self.load_data(
+            max_timestamp, lookback_hours=lookback_hours + int((max_timestamp - min_timestamp).total_seconds() / 3600)
+        )
 
         all_features = []
 

@@ -193,9 +193,7 @@ def test_survival_pipeline_prepare_dataset(sample_survival_data):
     base_time = sample_survival_data
 
     # create timestamps
-    timestamps = [
-        base_time + timedelta(hours=i * 12) for i in range(5)
-    ]
+    timestamps = [base_time + timedelta(hours=i * 12) for i in range(5)]
 
     dataset = pipeline.prepare_dataset(timestamps)
 
@@ -203,11 +201,16 @@ def test_survival_pipeline_prepare_dataset(sample_survival_data):
     assert "duration" in dataset.columns
     assert "event" in dataset.columns
     # check that we have some covariate columns (they have _lookback suffix pattern)
-    covariate_cols = [col for col in dataset.columns if col not in ["timestamp", "duration", "event", "region_number", "event_time"]]
+    covariate_cols = [
+        col for col in dataset.columns if col not in ["timestamp", "duration", "event", "region_number", "event_time"]
+    ]
     assert len(covariate_cols) > 0
     # should have flux, complexity, or flare-related features
     has_flux = any("flux" in col.lower() for col in covariate_cols)
-    has_complexity = any("complexity" in col.lower() or "mcintosh" in col.lower() or "mount_wilson" in col.lower() for col in covariate_cols)
+    has_complexity = any(
+        "complexity" in col.lower() or "mcintosh" in col.lower() or "mount_wilson" in col.lower()
+        for col in covariate_cols
+    )
     has_flare = any("flare" in col.lower() for col in covariate_cols)
     assert has_flux or has_complexity or has_flare
 
@@ -218,9 +221,7 @@ def test_survival_pipeline_train_and_evaluate(sample_survival_data):
     base_time = sample_survival_data
 
     # create timestamps
-    timestamps = [
-        base_time + timedelta(hours=i * 12) for i in range(20)
-    ]
+    timestamps = [base_time + timedelta(hours=i * 12) for i in range(20)]
 
     dataset = pipeline.prepare_dataset(timestamps)
 
@@ -233,4 +234,3 @@ def test_survival_pipeline_train_and_evaluate(sample_survival_data):
     assert "cox_c_index_test" in results or "gb_c_index_test" in results
     assert results["train_size"] > 0
     assert results["test_size"] > 0
-

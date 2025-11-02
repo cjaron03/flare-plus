@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def load_config() -> Dict[str, Any]:
     """
     load configuration from yaml file.
-    
+
     returns default config if file not found (allows graceful degradation).
     raises ValueError if yaml is invalid.
     """
@@ -30,7 +30,7 @@ def load_config() -> Dict[str, Any]:
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
             if config is None:
-                logger.warning(f"config.yaml exists but is empty, using defaults")
+                logger.warning("config.yaml exists but is empty, using defaults")
                 return _get_default_config()
             return config
     except FileNotFoundError:

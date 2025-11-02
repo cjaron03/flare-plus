@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-from src.models.labeling import FlareLabeler, create_labels
-from src.models.training import ModelTrainer, train_baseline_models
-from src.models.evaluation import ModelEvaluator, evaluate_model, calibrate_probabilities
+from src.models.labeling import FlareLabeler
+from src.models.training import ModelTrainer
+from src.models.evaluation import ModelEvaluator
 from src.models.pipeline import ClassificationPipeline
 
 
@@ -297,4 +297,3 @@ def test_classification_pipeline_initialization():
     assert pipeline.labeler is not None
     assert pipeline.trainer is not None
     assert pipeline.evaluator is not None
-

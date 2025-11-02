@@ -6,7 +6,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from src.data.schema import Base
-from src.data.database import Database
 
 
 @pytest.fixture(scope="session")
@@ -29,20 +28,16 @@ def test_db_engine():
         admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
 
         # create test database if it doesn't exist
+        # db_name is a hardcoded constant, not user input - safe from SQL injection
         with admin_engine.connect() as conn:
-            result = conn.execute(
-                text(f"SELECT 1 FROM pg_database WHERE datname='{db_name}'")
-            )
+            result = conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname='{db_name}'"))  # nosec
             if not result.fetchone():
-                conn.execute(text(f"CREATE DATABASE {db_name}"))
+                conn.execute(text(f"CREATE DATABASE {db_name}"))  # nosec
 
         admin_engine.dispose()
 
         # now connect to test database
-        db_url = os.getenv(
-            "TEST_DATABASE_URL",
-            f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}"
-        )
+        db_url = os.getenv("TEST_DATABASE_URL", f"postgresql://{db_user}:{db_password}@{db_host}:5432/{db_name}")
         engine = create_engine(db_url)
     else:
         # use sqlite in-memory database (safe default)
@@ -64,12 +59,12 @@ def db_session(test_db_engine):
     """create a new database session for a test."""
     connection = test_db_engine.connect()
     transaction = connection.begin()
-    
+
     session_factory = sessionmaker(bind=connection)
     session = session_factory()
-    
+
     yield session
-    
+
     session.close()
     transaction.rollback()
     connection.close()
@@ -79,18 +74,8 @@ def db_session(test_db_engine):
 def mock_goes_xrs_data():
     """mock goes xrs flux data."""
     return [
-        {
-            "time_tag": "2024-01-01T00:00:00Z",
-            "energy": "0.05-0.4nm",
-            "flux": 1.5e-6,
-            "satellite": "GOES-16"
-        },
-        {
-            "time_tag": "2024-01-01T00:00:00Z",
-            "energy": "0.1-0.8nm",
-            "flux": 3.2e-6,
-            "satellite": "GOES-16"
-        }
+        {"time_tag": "2024-01-01T00:00:00Z", "energy": "0.05-0.4nm", "flux": 1.5e-6, "satellite": "GOES-16"},
+        {"time_tag": "2024-01-01T00:00:00Z", "energy": "0.1-0.8nm", "flux": 3.2e-6, "satellite": "GOES-16"},
     ]
 
 
@@ -107,7 +92,6 @@ def mock_solar_region_data():
             "spot_class": "Dkc",
             "mag_class": "beta-gamma",
             "number_spots": 5,
-            "observed_date": "2025-10-30"
+            "observed_date": "2025-10-30",
         }
     ]
-

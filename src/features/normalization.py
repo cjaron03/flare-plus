@@ -200,7 +200,9 @@ def handle_missing_data(
 
     # fill any remaining missing values (fallback for edge cases)
     # this ensures single-row frames always have complete schema
-    remaining_nan_cols = features_processed[numeric_cols].columns[features_processed[numeric_cols].isnull().any()].tolist()
+    remaining_nan_cols = (
+        features_processed[numeric_cols].columns[features_processed[numeric_cols].isnull().any()].tolist()
+    )
     if remaining_nan_cols:
         if is_single_row:
             # for single-row frames, always fill remaining NaNs to maintain schema
