@@ -37,7 +37,7 @@ model:
 survival:
   target_flare_class: "X"  # focus on X-class flares for time-to-event
   max_time_hours: 168  # 7 days max observation window
-  time_buckets: [6, 12, 24, 48, 72, 96, 120, 168]  # hours
+  time_buckets: [0, 6, 12, 24, 48, 72, 96, 120, 168]  # hours
   cox_penalizer: 0.1
   gb_n_estimators: 100
   gb_learning_rate: 0.1

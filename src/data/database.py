@@ -4,9 +4,8 @@ import logging
 from typing import Optional
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from src.config import DatabaseConfig
 from src.data.schema import Base
@@ -74,8 +73,8 @@ class Database:
             logger.error(f"failed to drop tables: {e}")
             raise
 
-    @contextmanager
-    def get_session(self) -> Session:
+    @contextmanager  # type: ignore[misc]
+    def get_session(self):  # type: ignore[return]
         """
         context manager for database sessions.
 

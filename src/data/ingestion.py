@@ -62,9 +62,7 @@ class DataIngestionPipeline:
                 xray_data = load_cache(cache_name, max_age_hours=DataConfig.CACHE_HOURS)
 
             if xray_data is None:
-                if HAS_TQDM:
-                    print("fetching x-ray flux data...", end="\r")
-                logger.debug("fetching fresh xray flux data")
+                logger.info("fetching x-ray flux data...")
                 xray_data = self.xray_fetcher.fetch_recent_flux(days=7)
 
                 if xray_data is not None and len(xray_data) > 0:
@@ -75,25 +73,19 @@ class DataIngestionPipeline:
 
                 # detect flare events from flux data
                 try:
-                    if HAS_TQDM:
-                        print("detecting flare events...", end="\r")
-                    logger.debug("detecting flare events from x-ray flux data")
+                    logger.info("detecting flare events from x-ray flux data")
                     flares_df = self.flare_detector.detect_flares_from_flux(xray_data, min_class="C")
 
                     if flares_df is not None and len(flares_df) > 0:
                         results["flare_events"] = self.persister.save_flare_events(flares_df)
                         inserted = results["flare_events"].get("records_inserted", 0)
                         duplicates = results["flare_events"].get("records_updated", 0)
-                        if HAS_TQDM:
-                            if inserted > 0:
-                                print(f"detected {len(flares_df)} flares, saved {inserted} new                    ")
-                            else:
-                                print(
-                                    f"detected {len(flares_df)} flares, all duplicates (already in DB)                    "
-                                )
+                        if inserted > 0:
+                            logger.info(f"detected {len(flares_df)} flares, saved {inserted} new")
+                        else:
+                            logger.info(f"detected {len(flares_df)} flares, all duplicates (already in DB)")
                     else:
-                        if HAS_TQDM:
-                            print("no flare events detected in current window           ")
+                        logger.info("no flare events detected in current window")
                         results["flare_events"] = {"status": "success", "records_inserted": 0, "records_updated": 0}
 
                 except Exception as e:
@@ -115,9 +107,7 @@ class DataIngestionPipeline:
                 region_data = load_cache(region_cache_name, max_age_hours=1)
 
             if region_data is None:
-                if HAS_TQDM:
-                    print("fetching solar region data...", end="\r")
-                logger.debug("fetching fresh solar region data")
+                logger.info("fetching solar region data...")
                 region_data = self.region_fetcher.fetch_current_regions()
 
                 if region_data is not None and len(region_data) > 0:
@@ -128,16 +118,21 @@ class DataIngestionPipeline:
 
                 # extract magnetogram data from regions
                 try:
-                    if HAS_TQDM:
-                        print("extracting magnetogram data...", end="\r")
-                    logger.debug("extracting magnetogram data from solar regions")
-                    magnetogram_data = self.magnetogram_fetcher.fetch_magnetogram_from_regions(region_data)
+                    magnetogram_cache_name = f"magnetogram_{datetime.utcnow().strftime('%Y%m%d_%H')}"
+                    magnetogram_data = None
 
-                    if magnetogram_data is not None and len(magnetogram_data) > 0:
-                        magnetogram_cache_name = f"magnetogram_{datetime.utcnow().strftime('%Y%m%d_%H')}"
-                        if use_cache:
+                    # try cache first
+                    if use_cache:
+                        magnetogram_data = load_cache(magnetogram_cache_name, max_age_hours=1)
+
+                    if magnetogram_data is None:
+                        logger.info("extracting magnetogram data from solar regions")
+                        magnetogram_data = self.magnetogram_fetcher.fetch_magnetogram_from_regions(region_data)
+
+                        if magnetogram_data is not None and len(magnetogram_data) > 0:
                             save_cache(magnetogram_data, magnetogram_cache_name)
 
+                    if magnetogram_data is not None and len(magnetogram_data) > 0:
                         results["magnetogram"] = self.persister.save_magnetogram(magnetogram_data, show_progress=True)
                     else:
                         logger.warning("no magnetogram data extracted")
@@ -172,8 +167,8 @@ class DataIngestionPipeline:
         return {"status": "not_implemented", "message": "historical backfill requires manual setup"}
 
 
-def setup_logging(level=logging.WARNING):
-    """configure logging for data ingestion (default to WARNING for cleaner output)."""
+def setup_logging(level=logging.INFO):
+    """configure logging for data ingestion."""
     logging.basicConfig(
         level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
@@ -183,8 +178,8 @@ def main():
     """main entry point for data ingestion."""
     setup_logging()
 
-    print("\nflare-plus data ingestion")
-    print("=" * 60)
+    logger.info("flare-plus data ingestion")
+    logger.info("=" * 60)
 
     # initialize database
     logger.debug("setting up database")
@@ -194,17 +189,16 @@ def main():
     pipeline = DataIngestionPipeline()
     results = pipeline.run_incremental_update(use_cache=True)
 
-    # print clean summary
-    print("\n" + "=" * 60)
-    print("ingestion summary:")
-    print("-" * 60)
+    # log clean summary
+    logger.info("ingestion summary:")
+    logger.info("-" * 60)
 
     if results.get("xray_flux"):
         flux_stats = results["xray_flux"]
         if flux_stats.get("status") == "success":
-            print(f"  [OK] x-ray flux:     {flux_stats.get('records_inserted', 0):,} records saved")
+            logger.info(f"x-ray flux:     {flux_stats.get('records_inserted', 0):,} records saved")
         else:
-            print(f"  [FAIL] x-ray flux:     failed - {flux_stats.get('error_message', 'unknown error')}")
+            logger.error(f"x-ray flux:     failed - {flux_stats.get('error_message', 'unknown error')}")
 
     if results.get("flare_events"):
         flare_stats = results["flare_events"]
@@ -212,32 +206,32 @@ def main():
             inserted = flare_stats.get("records_inserted", 0)
             duplicates = flare_stats.get("records_updated", 0)
             if inserted > 0:
-                print(f"  [OK] flare events:   {inserted} new flares saved")
+                logger.info(f"flare events:   {inserted} new flares saved")
                 if duplicates > 0:
-                    print(f"  [INFO] flare events:   {duplicates} duplicates skipped")
+                    logger.info(f"flare events:   {duplicates} duplicates skipped")
             elif duplicates > 0:
-                print(f"  [INFO] flare events:   {duplicates} detected (all duplicates, already in DB)")
+                logger.info(f"flare events:   {duplicates} detected (all duplicates, already in DB)")
             else:
-                print(f"  [INFO] flare events:   none detected in current window")
+                logger.info("flare events:   none detected in current window")
         else:
-            print(f"  [FAIL] flare events:   failed - {flare_stats.get('error', 'unknown error')}")
+            logger.error(f"flare events:   failed - {flare_stats.get('error', 'unknown error')}")
 
     if results.get("solar_regions"):
         region_stats = results["solar_regions"]
         if region_stats.get("status") == "success":
-            print(f"  [OK] solar regions:  {region_stats.get('records_inserted', 0):,} records saved")
+            logger.info(f"solar regions:  {region_stats.get('records_inserted', 0):,} records saved")
         else:
-            print(f"  [FAIL] solar regions:  failed - {region_stats.get('error_message', 'unknown error')}")
+            logger.error(f"solar regions:  failed - {region_stats.get('error_message', 'unknown error')}")
 
     if results.get("magnetogram"):
         mag_stats = results["magnetogram"]
         if mag_stats.get("status") == "success":
-            print(f"  [OK] magnetograms:   {mag_stats.get('records_inserted', 0):,} records saved")
+            logger.info(f"magnetograms:   {mag_stats.get('records_inserted', 0):,} records saved")
         else:
-            print(f"  [FAIL] magnetograms:   failed - {mag_stats.get('error_message', 'unknown error')}")
+            logger.error(f"magnetograms:   failed - {mag_stats.get('error_message', 'unknown error')}")
 
-    print("=" * 60)
-    print("ingestion complete!\n")
+    logger.info("=" * 60)
+    logger.info("ingestion complete")
 
 
 if __name__ == "__main__":

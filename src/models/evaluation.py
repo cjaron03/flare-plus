@@ -53,20 +53,26 @@ class ModelEvaluator:
         """
         calibrate model probabilities.
 
+        note: calibration should use training data only to avoid data leakage.
+        the CalibratedClassifierCV uses internal cross-validation, so passing
+        training data is correct - it will split internally for calibration.
+
         args:
             model: trained model
-            X: feature matrix
-            y: true labels
+            X: feature matrix (should be training data, not test data)
+            y: true labels (should be training labels, not test labels)
             method: calibration method ('isotonic' or 'sigmoid')
             cv: number of cross-validation folds for calibration
 
         returns:
             tuple of (calibrated model, calibration info)
         """
+        # CalibratedClassifierCV uses internal CV, so using training data is correct
+        # it splits the data internally for calibration, preventing leakage
         calibrated_model = CalibratedClassifierCV(model, method=method, cv=cv)
         calibrated_model.fit(X, y)
 
-        # get uncalibrated and calibrated probabilities
+        # evaluate on same training data for info (calibration already used internal CV)
         uncalibrated_probs = model.predict_proba(X)
         calibrated_probs = calibrated_model.predict_proba(X)
 
@@ -240,6 +246,8 @@ class ModelEvaluator:
         y_true: np.ndarray,
         classes: Optional[List[str]] = None,
         calibrate: bool = True,
+        X_calibration: Optional[np.ndarray] = None,
+        y_calibration: Optional[np.ndarray] = None,
         plot_reliability: bool = False,
         reliability_filepath: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -274,9 +282,19 @@ class ModelEvaluator:
             else:
                 classes = [f"class_{i}" for i in range(y_prob.shape[1])]
 
+        # store predictions (needed for confusion matrix, etc.)
+        # but store only summary statistics for probabilities to save memory
+        prob_summary = {
+            "mean": y_prob.mean(axis=0).tolist(),
+            "std": y_prob.std(axis=0).tolist(),
+            "min": y_prob.min(axis=0).tolist(),
+            "max": y_prob.max(axis=0).tolist(),
+            "shape": list(y_prob.shape),
+        }
+
         evaluation_results = {
             "predictions": y_pred.tolist(),
-            "probabilities": y_prob.tolist(),
+            "probabilities_summary": prob_summary,  # summary stats instead of full array
             "classes": classes,
         }
 
@@ -299,29 +317,42 @@ class ModelEvaluator:
         evaluation_results["roc_auc"] = roc_auc_scores
 
         # calibrate if requested
+        # fix: use separate calibration set (training data) to avoid data leakage
         if calibrate:
-            calibrated_model, calibration_info = self.calibrate_probabilities(
-                model, X, y_true
-            )
-            evaluation_results["calibration"] = calibration_info
-
-            # recompute metrics with calibrated probabilities
-            calibrated_probs = calibrated_model.predict_proba(X)
-            calibrated_brier = self.compute_brier_score(
-                y_true, calibrated_probs, classes
-            )
-            calibrated_roc_auc = self.compute_roc_auc_per_class(
-                y_true, calibrated_probs, classes
-            )
-
-            evaluation_results["calibrated_brier_score"] = calibrated_brier
-            evaluation_results["calibrated_roc_auc"] = calibrated_roc_auc
-
-            # plot reliability diagram with calibrated probabilities
-            if plot_reliability:
-                self.plot_reliability_diagram(
-                    y_true, calibrated_probs, classes, filepath=reliability_filepath
+            if X_calibration is not None and y_calibration is not None:
+                # use provided calibration data (should be training data)
+                calibrated_model, calibration_info = self.calibrate_probabilities(
+                    model, X_calibration, y_calibration
                 )
+            else:
+                # fallback: log warning and skip calibration
+                logger.warning(
+                    "calibration requested but no calibration data provided. "
+                    "skipping calibration to avoid data leakage."
+                )
+                calibrated_model = None
+                calibration_info = None
+
+            if calibrated_model is not None:
+                evaluation_results["calibration"] = calibration_info
+
+                # recompute metrics with calibrated probabilities on test data
+                calibrated_probs = calibrated_model.predict_proba(X)
+                calibrated_brier = self.compute_brier_score(
+                    y_true, calibrated_probs, classes
+                )
+                calibrated_roc_auc = self.compute_roc_auc_per_class(
+                    y_true, calibrated_probs, classes
+                )
+
+                evaluation_results["calibrated_brier_score"] = calibrated_brier
+                evaluation_results["calibrated_roc_auc"] = calibrated_roc_auc
+
+                # plot reliability diagram with calibrated probabilities
+                if plot_reliability:
+                    self.plot_reliability_diagram(
+                        y_true, calibrated_probs, classes, filepath=reliability_filepath
+                    )
 
         else:
             # plot reliability diagram with uncalibrated probabilities

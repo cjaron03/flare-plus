@@ -144,15 +144,21 @@ def handle_missing_data(
 
     features_processed = features.copy()
 
-    # drop columns with too many missing values
-    missing_frac = features_processed.isnull().sum() / len(features_processed)
-    columns_to_drop = missing_frac[missing_frac > drop_threshold].index.tolist()
-    if columns_to_drop:
-        logger.info(f"dropping columns with >{drop_threshold*100}% missing: {columns_to_drop}")
-        features_processed = features_processed.drop(columns=columns_to_drop)
+    # drop columns with too many missing values (only for multi-row dataframes)
+    # for single-row frames, always impute to maintain stable schema
+    if len(features_processed) > 1:
+        missing_frac = features_processed.isnull().sum() / len(features_processed)
+        columns_to_drop = missing_frac[missing_frac > drop_threshold].index.tolist()
+        if columns_to_drop:
+            logger.info(f"dropping columns with >{drop_threshold*100}% missing: {columns_to_drop}")
+            features_processed = features_processed.drop(columns=columns_to_drop)
 
     # apply imputation strategy
     numeric_cols = features_processed.select_dtypes(include=[np.number]).columns.tolist()
+
+    # for single-row frames, always use strategies that can handle all-NaN columns
+    # to maintain stable schema across concatenations
+    is_single_row = len(features_processed) == 1
 
     if strategy == "forward_fill":
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")
@@ -161,13 +167,21 @@ def handle_missing_data(
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="bfill")
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")  # fill remaining
     elif strategy == "mean":
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(
-            features_processed[numeric_cols].mean()
-        )
+        mean_vals = features_processed[numeric_cols].mean()
+        # for single-row frames or all-NaN columns, use 0 as fallback to maintain schema
+        if is_single_row:
+            mean_vals = mean_vals.fillna(0)
+        else:
+            mean_vals = mean_vals.fillna(0)  # also use 0 for multi-row all-NaN columns
+        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(mean_vals)
     elif strategy == "median":
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(
-            features_processed[numeric_cols].median()
-        )
+        median_vals = features_processed[numeric_cols].median()
+        # for single-row frames or all-NaN columns, use 0 as fallback to maintain schema
+        if is_single_row:
+            median_vals = median_vals.fillna(0)
+        else:
+            median_vals = median_vals.fillna(0)  # also use 0 for multi-row all-NaN columns
+        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(median_vals)
     elif strategy == "zero":
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(0)
     elif strategy == "constant":
@@ -176,12 +190,30 @@ def handle_missing_data(
             fill_value = 0
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(fill_value)
     elif strategy == "drop":
-        # drop rows with any missing values
-        features_processed = features_processed.dropna()
+        # drop rows with any missing values (only for multi-row frames)
+        if not is_single_row:
+            features_processed = features_processed.dropna()
     else:
         logger.warning(f"unknown strategy: {strategy}, using forward_fill")
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")
         features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="bfill")
+
+    # fill any remaining missing values (fallback for edge cases)
+    # this ensures single-row frames always have complete schema
+    remaining_nan_cols = (
+        features_processed[numeric_cols].columns[features_processed[numeric_cols].isnull().any()].tolist()
+    )
+    if remaining_nan_cols:
+        if is_single_row:
+            # for single-row frames, always fill remaining NaNs to maintain schema
+            logger.debug(f"filling remaining NaN columns in single-row frame: {remaining_nan_cols}")
+            features_processed[remaining_nan_cols] = features_processed[remaining_nan_cols].fillna(0)
+        else:
+            # for multi-row frames, fill with column means or 0
+            for col in remaining_nan_cols:
+                col_mean = features_processed[col].mean()
+                fill_val = col_mean if pd.notna(col_mean) else 0
+                features_processed[col] = features_processed[col].fillna(fill_val)
 
     # fill any remaining missing values in non-numeric columns with a placeholder
     non_numeric_cols = features_processed.select_dtypes(exclude=[np.number]).columns.tolist()

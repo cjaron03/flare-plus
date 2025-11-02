@@ -1,10 +1,9 @@
 """rolling statistics and recency-weighted flare counts."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 from datetime import datetime, timedelta
 
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ def compute_rolling_statistics(
 
     valid_data = valid_data.sort_values("timestamp")
 
-    features = {}
+    features: Dict[str, Any] = {}
 
     for window_hours in windows_hours:
         # filter data within window

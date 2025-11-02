@@ -162,9 +162,13 @@ class DataPersister:
                     else:
                         num_sunspots = None
 
-                    region = SolarRegion(
-                        timestamp=row.get("timestamp", datetime.utcnow()),
-                        region_number=int(region_number),
+                    timestamp = row.get("timestamp", datetime.utcnow())
+                    region_number_int = int(region_number)
+
+                    # use upsert (insert or update on conflict)
+                    stmt = insert(SolarRegion).values(
+                        timestamp=timestamp,
+                        region_number=region_number_int,
                         latitude=row.get("latitude") if pd.notna(row.get("latitude")) else None,
                         longitude=row.get("longitude") if pd.notna(row.get("longitude")) else None,
                         mcintosh_class=row.get("mcintosh_class") if pd.notna(row.get("mcintosh_class")) else None,
@@ -175,9 +179,25 @@ class DataPersister:
                         num_sunspots=num_sunspots,
                         magnetic_type=row.get("magnetic_type") if pd.notna(row.get("magnetic_type")) else None,
                     )
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_region_timestamp",
+                        set_={
+                            "latitude": stmt.excluded.latitude,
+                            "longitude": stmt.excluded.longitude,
+                            "mcintosh_class": stmt.excluded.mcintosh_class,
+                            "mount_wilson_class": stmt.excluded.mount_wilson_class,
+                            "area": stmt.excluded.area,
+                            "num_sunspots": stmt.excluded.num_sunspots,
+                            "magnetic_type": stmt.excluded.magnetic_type,
+                            "ingested_at": datetime.utcnow(),
+                        },
+                    )
 
-                    session.add(region)
-                    stats["records_inserted"] += 1
+                    result = session.execute(stmt)
+                    if result.rowcount > 0:
+                        stats["records_inserted"] += 1
+                    else:
+                        stats["records_updated"] += 1
 
                 session.commit()
 
@@ -230,9 +250,16 @@ class DataPersister:
                     iterable = tqdm(df.iterrows(), total=len(df), desc="saving magnetograms", unit="record")
 
                 for _, row in iterable:
-                    magnetogram = SolarMagnetogram(
-                        timestamp=row.get("timestamp", datetime.utcnow()),
-                        region_number=row.get("region_number"),
+                    timestamp = row.get("timestamp", datetime.utcnow())
+                    region_number = row.get("region_number")
+
+                    if pd.isna(region_number) or region_number is None:
+                        continue
+
+                    # use upsert (insert or update on conflict)
+                    stmt = insert(SolarMagnetogram).values(
+                        timestamp=timestamp,
+                        region_number=int(region_number),
                         magnetic_field_strength=row.get("magnetic_field_strength"),
                         magnetic_field_polarity=row.get("magnetic_field_polarity"),
                         magnetic_complexity=row.get("magnetic_complexity"),
@@ -242,9 +269,26 @@ class DataPersister:
                         source=row.get("source", "noaa_swpc"),
                         data_quality=row.get("data_quality", "good"),
                     )
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_magnetogram_region_timestamp",
+                        set_={
+                            "magnetic_field_strength": stmt.excluded.magnetic_field_strength,
+                            "magnetic_field_polarity": stmt.excluded.magnetic_field_polarity,
+                            "magnetic_complexity": stmt.excluded.magnetic_complexity,
+                            "latitude": stmt.excluded.latitude,
+                            "longitude": stmt.excluded.longitude,
+                            "solar_radius": stmt.excluded.solar_radius,
+                            "source": stmt.excluded.source,
+                            "data_quality": stmt.excluded.data_quality,
+                            "ingested_at": datetime.utcnow(),
+                        },
+                    )
 
-                    session.add(magnetogram)
-                    stats["records_inserted"] += 1
+                    result = session.execute(stmt)
+                    if result.rowcount > 0:
+                        stats["records_inserted"] += 1
+                    else:
+                        stats["records_updated"] += 1
 
                 session.commit()
 
@@ -312,6 +356,17 @@ class DataPersister:
                         stats["records_updated"] += 1  # track duplicates
                         continue  # skip duplicate
 
+                    # handle NaN values for integer columns (convert to None for postgres)
+                    active_region = row.get("active_region")
+                    if pd.isna(active_region):
+                        active_region = None
+                    elif active_region is not None:
+                        # ensure it's an integer, not float
+                        try:
+                            active_region = int(active_region)
+                        except (ValueError, TypeError):
+                            active_region = None
+
                     flare = FlareEvent(
                         start_time=row.get("start_time"),
                         peak_time=row.get("peak_time"),
@@ -319,7 +374,7 @@ class DataPersister:
                         flare_class=row.get("flare_class"),
                         class_category=row.get("class_category"),
                         class_magnitude=row.get("class_magnitude"),
-                        active_region=row.get("active_region"),
+                        active_region=active_region,
                         location=None,  # could be enhanced with heliographic coordinates
                         source=row.get("source", source_name),
                         verified=row.get("verified", False),

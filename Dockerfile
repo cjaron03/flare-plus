@@ -78,7 +78,10 @@ ENV PATH="/opt/venv/bin:$PATH" \
 # copy application code
 COPY src/ ./src/
 COPY scripts/ ./scripts/
-COPY config.yaml pyproject.toml ./
+COPY pyproject.toml ./
+# copy config.yaml if it exists (optional - code has defaults via load_config)
+# note: docker-compose mounts this as volume, but for standalone builds it should exist
+COPY config.yaml* ./
 
 # copy tests directory (for local dev/testing)
 ARG INSTALL_DEV=true

@@ -1,11 +1,10 @@
 """main feature engineering pipeline."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
 import pandas as pd
-import numpy as np
 
 from src.config import CONFIG
 from src.data.database import get_database
@@ -169,6 +168,7 @@ class FeatureEngineer:
         normalize: bool = False,
         standardize: bool = False,
         handle_missing: bool = True,
+        preloaded_data: Optional[Dict[str, pd.DataFrame]] = None,
     ) -> pd.DataFrame:
         """
         compute all features for a given timestamp.
@@ -179,23 +179,63 @@ class FeatureEngineer:
             normalize: whether to normalize features
             standardize: whether to standardize features
             handle_missing: whether to handle missing data
+            preloaded_data: optional pre-loaded data dict to avoid DB queries
 
         returns:
             dataframe with computed features
         """
-        # load data
-        data = self.load_data(timestamp, lookback_hours=max(self.rolling_windows) + 24)
+        # load data (or use preloaded)
+        if preloaded_data is not None:
+            # filter preloaded data to the relevant time window for this timestamp
+            lookback_hours = max(self.rolling_windows) + 24
+            cutoff_time = timestamp - timedelta(hours=lookback_hours)
+            data = {
+                "flux": (
+                    preloaded_data["flux"][
+                        (preloaded_data["flux"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["flux"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["flux"]) > 0
+                    else pd.DataFrame()
+                ),
+                "regions": (
+                    preloaded_data["regions"][
+                        (preloaded_data["regions"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["regions"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["regions"]) > 0
+                    else pd.DataFrame()
+                ),
+                "magnetograms": (
+                    preloaded_data["magnetograms"][
+                        (preloaded_data["magnetograms"]["timestamp"] >= cutoff_time)
+                        & (preloaded_data["magnetograms"]["timestamp"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["magnetograms"]) > 0
+                    else pd.DataFrame()
+                ),
+                "flares": (
+                    preloaded_data["flares"][
+                        (preloaded_data["flares"]["peak_time"] >= cutoff_time)
+                        & (preloaded_data["flares"]["peak_time"] <= timestamp)
+                    ].copy()
+                    if len(preloaded_data["flares"]) > 0
+                    else pd.DataFrame()
+                ),
+            }
+        else:
+            data = self.load_data(timestamp, lookback_hours=max(self.rolling_windows) + 24)
 
         features = {}
 
         # base features
         features["timestamp"] = timestamp
-        if region_number:
+        if region_number is not None:
             features["region_number"] = region_number
 
         # 1. complexity features from solar regions
         if len(data["regions"]) > 0:
-            if region_number:
+            if region_number is not None:
                 region_data = data["regions"][data["regions"]["region_number"] == region_number]
             else:
                 # use most recent region
@@ -294,6 +334,20 @@ class FeatureEngineer:
         returns:
             dataframe with computed features for all timestamps
         """
+        if not timestamps:
+            return pd.DataFrame()
+
+        # calculate overall time window needed for bulk load
+        min_timestamp = min(timestamps)
+        max_timestamp = max(timestamps)
+        lookback_hours = max(self.rolling_windows) + 24
+
+        # load all data once for the entire time range
+        logger.info(f"bulk loading data for {len(timestamps)} timestamps")
+        preloaded_data = self.load_data(
+            max_timestamp, lookback_hours=lookback_hours + int((max_timestamp - min_timestamp).total_seconds() / 3600)
+        )
+
         all_features = []
 
         for timestamp in timestamps:
@@ -304,6 +358,7 @@ class FeatureEngineer:
                     normalize=False,  # normalize/standardize after combining
                     standardize=False,
                     handle_missing=handle_missing,
+                    preloaded_data=preloaded_data,  # pass preloaded data
                 )
                 all_features.append(features)
             except Exception as e:

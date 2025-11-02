@@ -267,16 +267,56 @@ see `docs/TODO.md` for the complete roadmap.
 
 ## development setup
 
-### pre-commit hooks
+### code formatting
 
-install pre-commit hooks for automatic code formatting:
+this project uses [black](https://black.readthedocs.io/) for consistent code formatting. all python files must be formatted with black before committing.
+
+#### automatic formatting (recommended)
+
+install pre-commit hooks for automatic formatting on every commit:
 
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-this will automatically format code with black before each commit, preventing formatting issues in ci.
+now black will automatically format your code before each commit, preventing ci failures.
+
+#### manual formatting
+
+format code manually using make commands:
+
+```bash
+# using docker-compose (if containers are running)
+make format              # format all python files (src/, tests/, scripts/)
+make format-check        # check formatting without modifying files
+
+# local development (without docker)
+make local-format        # format using local python environment
+```
+
+or run black directly:
+
+```bash
+# format specific directories
+black src/ tests/ scripts/
+
+# check formatting without changes
+black --check src/ tests/ scripts/
+
+# format a single file
+black src/data/ingestion.py
+```
+
+#### ci/cd
+
+the ci pipeline runs `black --check` on all pull requests. if formatting issues are detected, the build will fail. to fix:
+
+1. run `make format` or `black src/ tests/ scripts/`
+2. commit the formatted files
+3. push to trigger ci again
+
+all code must pass black formatting checks before merging.
 
 ## contributing
 

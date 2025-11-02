@@ -10,13 +10,14 @@ import json
 # add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import logging
-import pandas as pd
-from tqdm import tqdm
-from src.models.survival_pipeline import SurvivalAnalysisPipeline
-from src.data.database import get_database
-from src.data.schema import FlareEvent
-from sqlalchemy import func
+import logging  # noqa: E402
+
+import pandas as pd  # noqa: E402
+from sqlalchemy import func  # noqa: E402
+
+from src.data.database import get_database  # noqa: E402
+from src.data.schema import FlareEvent  # noqa: E402
+from src.models.survival_pipeline import SurvivalAnalysisPipeline  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,36 +98,43 @@ def get_historical_timestamps(
         return timestamps
 
 
-def check_data_availability(start_date: datetime, end_date: datetime) -> dict:
+def check_data_availability(start_date: datetime, end_date: datetime, target_class: str = "X") -> dict:
     """
-    check if we have enough data (especially x-class flares) for training.
+    check if we have enough data for training.
 
     args:
         start_date: start of period
         end_date: end of period
+        target_class: target flare class to check
 
     returns:
         dict with data availability stats
     """
     db = get_database()
     stats = {
+        "c_class_flares": 0,
+        "m_class_flares": 0,
         "x_class_flares": 0,
+        "target_class_flares": 0,
         "total_flares": 0,
         "period_days": (end_date - start_date).days,
+        "sufficient": False,
     }
 
     try:
         with db.get_session() as session:
-            # count x-class flares in period
-            x_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                    FlareEvent.class_category == "X",
+            # count flares by class
+            for flare_class in ["C", "M", "X"]:
+                count = (
+                    session.query(FlareEvent)
+                    .filter(
+                        FlareEvent.start_time >= start_date,
+                        FlareEvent.start_time <= end_date,
+                        FlareEvent.class_category == flare_class,
+                    )
+                    .count()
                 )
-                .count()
-            )
+                stats[f"{flare_class.lower()}_class_flares"] = count
 
             # count total flares
             total_flares = (
@@ -138,8 +146,12 @@ def check_data_availability(start_date: datetime, end_date: datetime) -> dict:
                 .count()
             )
 
-            stats["x_class_flares"] = x_flares
             stats["total_flares"] = total_flares
+            stats["target_class_flares"] = stats[f"{target_class.lower()}_class_flares"]
+
+            # check if sufficient for training
+            min_required = {"C": 200, "M": 50, "X": 10}
+            stats["sufficient"] = stats["target_class_flares"] >= min_required.get(target_class, 10)
 
     except Exception as e:
         logger.error(f"error checking data availability: {e}")
@@ -171,38 +183,38 @@ def train_model(
     logger.info(f"training survival model from {start_date} to {end_date}")
     logger.info(f"target flare class: {target_flare_class}")
 
-    # check data availability for target class
-    db = get_database()
-    try:
-        with db.get_session() as session:
-            target_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                    FlareEvent.class_category == target_flare_class,
-                )
-                .count()
-            )
-            total_flares = (
-                session.query(FlareEvent)
-                .filter(
-                    FlareEvent.start_time >= start_date,
-                    FlareEvent.start_time <= end_date,
-                )
-                .count()
-            )
-    except Exception as e:
-        logger.error(f"error checking data availability: {e}")
-        target_flares = 0
-        total_flares = 0
+    # check data availability
+    stats = check_data_availability(start_date, end_date, target_flare_class)
 
-    logger.info(
-        f"data availability: {target_flares} {target_flare_class}-class flares, "
-        f"{total_flares} total flares"
-    )
+    print("\n" + "=" * 70)
+    print("DATA AVAILABILITY CHECK")
+    print("=" * 70)
+    print(f"Period: {start_date.date()} to {end_date.date()} ({stats['period_days']} days)")
+    print(f"C-class flares: {stats['c_class_flares']}")
+    print(f"M-class flares: {stats['m_class_flares']}")
+    print(f"X-class flares: {stats['x_class_flares']}")
+    print(f"Target ({target_flare_class}-class): {stats['target_class_flares']}")
+    print("=" * 70)
+
+    min_required = {"C": 200, "M": 50, "X": 10}
+    required = min_required.get(target_flare_class, 10)
+
+    if not stats["sufficient"]:
+        print("\nWARNING: INSUFFICIENT TRAINING DATA")
+        print(f"You have {stats['target_class_flares']} {target_flare_class}-class flares")
+        print(f"Minimum recommended: {required}")
+        print("\nThis model will likely OVERFIT and produce unreliable predictions.")
+        print("Predictions are for DEMONSTRATION/LEARNING purposes only.")
+        print("\nSee docs/DATA_COLLECTION_GUIDE.md for how to get more data.")
+        print("=" * 70)
+        print("\nProceeding with training (demonstration mode)...")
+        print("=" * 70 + "\n")
+    else:
+        print(f"\n[OK] Sufficient data for {target_flare_class}-class training")
+        print("=" * 70 + "\n")
 
     # check what classes we actually have
+    db = get_database()
     try:
         with db.get_session() as session:
             class_counts = (
@@ -221,12 +233,16 @@ def train_model(
     except Exception as e:
         logger.debug(f"error getting class breakdown: {e}")
 
+    # use stats from check_data_availability
+    target_flares = stats["target_class_flares"]
+    total_flares = stats["total_flares"]
+
     if target_flares < 5:
         logger.warning(
             f"low {target_flare_class}-class flare count ({target_flares}). "
             "model may not train well. consider using --target-class C (most common)."
         )
-        
+
         # suggest using C-class if we have any
         if total_flares > 0 and target_flares == 0:
             logger.warning(
@@ -242,35 +258,38 @@ def train_model(
 
     # get actual data range first (when we have flux data)
     from src.data.persistence import DataPersister
+
     persister = DataPersister()
     flux_df = persister.get_xray_flux_range(start_date, end_date)
-    
+
     if len(flux_df) == 0:
         raise ValueError("no flux data available in date range - run data ingestion first")
-    
+
     data_start = pd.to_datetime(flux_df["timestamp"].min()).to_pydatetime()
     data_end = pd.to_datetime(flux_df["timestamp"].max()).to_pydatetime()
-    
+
     # max lookback needed is 24 hours (from time_varying_covariates config)
     max_lookback = timedelta(hours=24)
     min_observation_time = data_start + max_lookback
-    
+
     logger.info(f"flux data available from {data_start} to {data_end}")
-    logger.info(f"generating observations from {min_observation_time} (to allow {max_lookback.total_seconds()/3600}h lookback)")
-    
+    logger.info(
+        f"generating observations from {min_observation_time} (to allow {max_lookback.total_seconds()/3600}h lookback)"
+    )
+
     # generate timestamps only within data coverage window
     timestamps = []
-    
+
     # start from min_observation_time (after data start + lookback)
     # end at data_end or end_date, whichever is earlier
     effective_end = min(data_end, end_date)
-    
+
     # generate regular interval timestamps
     current = min_observation_time
     while current <= effective_end:
         timestamps.append(current)
         current += timedelta(hours=interval_hours)
-    
+
     # also add timestamps before detected flares (for event observations)
     try:
         with db.get_session() as session:
@@ -283,14 +302,14 @@ def train_model(
                 .order_by(FlareEvent.start_time)
                 .all()
             )
-            
+
             if flare_times:
                 # add observation timestamps 12h, 24h, 48h before each flare
                 for (flare_time,) in flare_times:
                     # ensure flare_time is datetime
-                    if hasattr(flare_time, 'to_pydatetime'):
+                    if hasattr(flare_time, "to_pydatetime"):
                         flare_time = flare_time.to_pydatetime()
-                    
+
                     # add observations before flares
                     for hours_before in [12, 24, 48]:
                         obs_time = flare_time - timedelta(hours=hours_before)
@@ -298,10 +317,10 @@ def train_model(
                         if obs_time >= min_observation_time and obs_time <= effective_end:
                             if obs_time not in timestamps:
                                 timestamps.append(obs_time)
-    
+
     except Exception as e:
         logger.debug(f"error adding flare-based timestamps: {e}")
-    
+
     timestamps = sorted(set(timestamps))  # remove duplicates and sort
     logger.info(f"generated {len(timestamps)} observation timestamps (with data coverage)")
 
@@ -416,7 +435,11 @@ def format_prediction(prediction: dict) -> str:
     sorted_buckets = sorted(prob_dist.items(), key=lambda x: float(x[0].split("-")[0].replace("h", "")))
 
     for bucket, prob in sorted_buckets:
-        lines.append(f"  {bucket:15s} {prob*100:6.2f}%")
+        # show more precision if probabilities are very small
+        if prob > 0 and prob < 0.01:
+            lines.append(f"  {bucket:15s} {prob*100:6.4f}%")
+        else:
+            lines.append(f"  {bucket:15s} {prob*100:6.2f}%")
 
     lines.append("")
     lines.append("interpretation:")
@@ -429,9 +452,7 @@ def format_prediction(prediction: dict) -> str:
 
 def main():
     """main entry point."""
-    parser = argparse.ArgumentParser(
-        description="train survival analysis model and predict x-class flare timing"
-    )
+    parser = argparse.ArgumentParser(description="train survival analysis model and predict x-class flare timing")
     parser.add_argument(
         "--train",
         action="store_true",
@@ -622,4 +643,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
