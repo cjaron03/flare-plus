@@ -82,15 +82,18 @@
   - [OK] Flexible flare class targeting (X/M/C) with automatic data availability checking
 
 ## Model Serving
-- [~] Wrap models behind a single prediction service exposing both probability endpoints.
+- [x] Wrap models behind a single prediction service exposing both probability endpoints.
   - [OK] Prediction methods implemented (`ClassificationPipeline.predict()` and `SurvivalAnalysisPipeline.predict_survival_probabilities()`)
   - [OK] Command-line scripts for predictions (`scripts/train_and_predict_survival.py`)
-  - [PENDING] HTTP API service (Flask/FastAPI) to expose prediction endpoints
-  - [PENDING] Unified service interface combining classification and survival predictions
-- [ ] Implement monitoring hooks for input drift and outcome logging.
-  - [PENDING] Input drift detection (statistical tests for feature distribution shifts)
-  - [PENDING] Outcome logging infrastructure (store predictions and actuals for monitoring)
-  - [PENDING] Model performance tracking over time
+  - [OK] HTTP API service (Flask) implemented (`src/api/app.py`) with endpoints: `/health`, `/predict/classification`, `/predict/survival`, `/predict/all`
+  - [OK] Unified service interface (`PredictionService`) combining classification and survival predictions
+  - [OK] Server script for running API (`scripts/run_api_server.py`) with model loading support
+- [x] Implement monitoring hooks for input drift and outcome logging.
+  - [OK] Input drift detection implemented (`InputDriftDetector`) with statistical tests (Kolmogorov-Smirnov, Mann-Whitney U)
+  - [OK] Outcome logging infrastructure implemented (`OutcomeLogger`) for storing predictions and actuals
+  - [OK] Model performance tracking over time (`OutcomeLogger.get_performance_metrics()`)
+  - [OK] Database schema for prediction logs (`PredictionLog` table)
+  - [OK] Comprehensive test suite (19 tests covering all endpoints and monitoring)
 
 ## UI Prototype
 - [ ] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
