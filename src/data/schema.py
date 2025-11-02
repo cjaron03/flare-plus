@@ -164,3 +164,38 @@ class DataIngestionLog(Base):  # type: ignore[misc,valid-type]
 
     def __repr__(self):
         return f"<DataIngestionLog(source={self.source_name}, status={self.status})>"
+
+
+class PredictionLog(Base):  # type: ignore[misc,valid-type]
+    """log of model predictions for monitoring and outcome tracking."""
+
+    __tablename__ = "flare_prediction_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # prediction info
+    prediction_timestamp = Column(DateTime, nullable=False, index=True)
+    observation_timestamp = Column(DateTime, nullable=False)  # when features were computed
+    prediction_type = Column(String(20), nullable=False)  # 'classification' or 'survival'
+    region_number = Column(Integer, nullable=True)
+
+    # model info
+    model_type = Column(String(50))  # e.g., 'gradient_boosting', 'cox', 'gb'
+    window_hours = Column(Integer, nullable=True)  # for classification predictions
+
+    # prediction results (stored as json-encodable dict)
+    predicted_class = Column(String(10), nullable=True)  # for classification
+    class_probabilities = Column(String(1000), nullable=True)  # json string of probabilities
+    probability_distribution = Column(String(2000), nullable=True)  # json string for survival
+    hazard_score = Column(Float, nullable=True)  # for survival predictions
+
+    # outcome tracking
+    actual_flare_class = Column(String(10), nullable=True)
+    actual_flare_time = Column(DateTime, nullable=True)
+    outcome_recorded_at = Column(DateTime, nullable=True)
+
+    # metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PredictionLog(id={self.id}, type={self.prediction_type}, timestamp={self.prediction_timestamp})>"
