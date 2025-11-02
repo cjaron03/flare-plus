@@ -82,8 +82,15 @@
   - [OK] Flexible flare class targeting (X/M/C) with automatic data availability checking
 
 ## Model Serving
-- [ ] Wrap models behind a single prediction service exposing both probability endpoints.
+- [~] Wrap models behind a single prediction service exposing both probability endpoints.
+  - [OK] Prediction methods implemented (`ClassificationPipeline.predict()` and `SurvivalAnalysisPipeline.predict_survival_probabilities()`)
+  - [OK] Command-line scripts for predictions (`scripts/train_and_predict_survival.py`)
+  - [PENDING] HTTP API service (Flask/FastAPI) to expose prediction endpoints
+  - [PENDING] Unified service interface combining classification and survival predictions
 - [ ] Implement monitoring hooks for input drift and outcome logging.
+  - [PENDING] Input drift detection (statistical tests for feature distribution shifts)
+  - [PENDING] Outcome logging infrastructure (store predictions and actuals for monitoring)
+  - [PENDING] Model performance tracking over time
 
 ## UI Prototype
 - [ ] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
