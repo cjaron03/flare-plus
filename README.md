@@ -209,6 +209,34 @@ configure scheduled updates using cron or system scheduler:
 0 * * * * cd /path/to/flare-plus && docker-compose exec app python scripts/run_ingestion.py
 ```
 
+### ui dashboard
+
+run the gradio-based interactive dashboard:
+
+```bash
+# using api (requires api server running)
+python3 scripts/run_ui.py --api-url http://127.0.0.1:5000
+
+# using direct model loading (fallback if api unavailable)
+python3 scripts/run_ui.py \
+    --classification-model models/classification_model.joblib \
+    --survival-model models/survival_model.joblib
+
+# custom port
+python3 scripts/run_ui.py --port 8080
+
+# create public share link
+python3 scripts/run_ui.py --share
+```
+
+the dashboard includes:
+- **predictions tab**: classification (24-48h) and survival analysis (time-to-event) predictions
+- **timeline tab**: historical flare event visualization with filters
+- **scenario tab**: what-if scenario exploration (planned)
+- **about tab**: data sources, methodology, limitations
+
+the dashboard uses a hybrid connection approach: it tries to connect to the api server first, and falls back to direct model loading if the api is unavailable.
+
 ## data sources
 
 all data comes from noaa space weather prediction center (swpc):
@@ -256,6 +284,8 @@ no api keys required - data is publicly accessible.
   - command-line training and prediction script
 
 ### in progress / planned
+
+- [ ] ui dashboard (gradio-based interactive interface)
 
 - [ ] model serving: flask api for probability endpoints
 - [ ] ui dashboard: streamlit interface for visualization

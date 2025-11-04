@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -10,6 +10,7 @@ from flask_cors import CORS
 from src.api.service import PredictionService
 from src.models.pipeline import ClassificationPipeline
 from src.models.survival_pipeline import SurvivalAnalysisPipeline
+from src.data.ingestion import DataIngestionPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -165,5 +166,109 @@ def create_app(
         except Exception as e:
             logger.error(f"combined prediction error: {e}", exc_info=True)
             return jsonify({"error": "internal server error"}), 500
+
+    def determine_overall_status(results: Dict[str, Any]) -> str:
+        """
+        determine overall ingestion status based on individual data type statuses.
+
+        args:
+            results: ingestion results dict with xray_flux, solar_regions, magnetogram, flare_events
+
+        returns:
+            "success" (all succeeded), "partial" (some succeeded), or "failed" (all failed)
+        """
+        statuses = []
+
+        # check each data type's status field
+        for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+            if key in results and results[key] is not None:
+                result_data = results[key]
+                status = result_data.get("status", "failed")
+                statuses.append(status)
+
+        if not statuses:
+            return "failed"
+
+        success_count = sum(1 for s in statuses if s == "success")
+        total_count = len(statuses)
+
+        if success_count == total_count:
+            return "success"
+        elif success_count > 0:
+            return "partial"
+        else:
+            return "failed"
+
+    @app.route("/ingest", methods=["POST"])
+    def ingest():
+        """
+        data ingestion endpoint (day 2: with duration tracking).
+
+        request body (optional):
+            {
+                "use_cache": true  # optional, defaults to true
+            }
+
+        returns:
+            {
+                "status": "success",
+                "duration": 4.2,  # seconds
+                "results": {...}
+            }
+        """
+        # day 4: add partial failure logic
+        start_time = datetime.utcnow()
+
+        try:
+            data = request.get_json() if request.is_json else {}
+            use_cache = data.get("use_cache", True)
+
+            logger.info("starting data ingestion")
+            pipeline = DataIngestionPipeline()
+            results = pipeline.run_incremental_update(use_cache=use_cache)
+
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+
+            # determine overall status by checking each data type's status field
+            overall_status = determine_overall_status(results)
+
+            # format results with status for each data type
+            formatted_results = {}
+            for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+                if key in results and results[key] is not None:
+                    result_data = results[key]
+                    status = result_data.get("status", "failed")
+                    formatted_results[key] = {"status": status}
+
+                    # add records/error info based on status
+                    if status == "success":
+                        if key == "xray_flux":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "solar_regions":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "magnetogram":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "flare_events":
+                            formatted_results[key]["new"] = result_data.get("records_inserted", 0)
+                            formatted_results[key]["duplicates"] = result_data.get("records_updated", 0)
+                    else:
+                        formatted_results[key]["error"] = result_data.get(
+                            "error", result_data.get("error_message", "unknown error")
+                        )
+
+            # determine http status code
+            http_status = 200 if overall_status in ["success", "partial"] else 500
+
+            return (
+                jsonify({"overall_status": overall_status, "duration": duration, "results": formatted_results}),
+                http_status,
+            )
+
+        except Exception as e:
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            logger.error(f"ingestion error: {e}", exc_info=True)
+            return jsonify({"overall_status": "failed", "error": str(e), "duration": duration, "results": {}}), 500
 
     return app

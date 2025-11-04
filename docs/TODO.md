@@ -96,8 +96,20 @@
   - [OK] Comprehensive test suite (19 tests covering all endpoints and monitoring)
 
 ## UI Prototype
-- [ ] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
-- [ ] Add controls for scenario exploration (e.g., tweak sunspot metrics) and display NOAA source links.
+- [x] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
+  - [OK] Gradio-based dashboard implemented with modular structure
+  - [OK] Predictions tab: classification and survival analysis with plain language summaries
+  - [OK] Timeline tab: historical flare event visualization with Plotly charts
+  - [OK] About tab: NOAA source links, author attribution (Jaron Cabral), limitations disclaimer
+  - [OK] Hybrid connection: API-first with fallback to direct model loading
+  - [OK] Performance throttling for refresh operations
+  - [OK] Data freshness indicators in sidebar
+  - [NOTE] Scenario exploration tab placeholder (requires full feature recalculation - future enhancement)
+- [x] Add controls for scenario exploration (e.g., tweak sunspot metrics) and display NOAA source links.
+  - [OK] NOAA source links displayed in About tab (from config.yaml)
+  - [OK] Author attribution (Jaron Cabral) prominently displayed
+  - [OK] Limitations clearly marked throughout UI
+  - [NOTE] Scenario controls simplified (full implementation requires feature engineering recalculation)
 
 ## Validation & Ops
 - [ ] Backtest against recent solar cycles; compare against NOAA forecasts.

@@ -43,6 +43,9 @@ services:
       
       # python settings
       PYTHONUNBUFFERED: 1
+    ports:
+      - "${UI_PORT:-7860}:7860"  # gradio ui dashboard
+      - "${API_PORT:-5001}:5000"  # flask api server (mapped to 5001 to avoid macOS ControlCenter conflict)
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
