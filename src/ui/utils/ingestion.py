@@ -93,8 +93,6 @@ def can_trigger_ingestion() -> Tuple[bool, str]:
     returns:
         tuple: (can_trigger, message)
     """
-    global _last_ingestion_time
-
     if _last_ingestion_time is None:
         return True, ""
 
