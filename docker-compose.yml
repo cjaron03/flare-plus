@@ -40,9 +40,16 @@ services:
       DATA_CACHE_HOURS: ${DATA_CACHE_HOURS:-48}
       UPDATE_INTERVAL_MINUTES: ${UPDATE_INTERVAL_MINUTES:-60}
       BACKFILL_START_DATE: ${BACKFILL_START_DATE:-2023-01-01}
+
+      # admin dashboard
+      ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
+      ADMIN_RUNTIME_TOKEN: ${ADMIN_RUNTIME_TOKEN:-}
       
       # python settings
       PYTHONUNBUFFERED: 1
+    ports:
+      - "${UI_PORT:-7860}:7860"  # gradio ui dashboard
+      - "${API_PORT:-5001}:5000"  # flask api server (mapped to 5001 to avoid macOS ControlCenter conflict)
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
@@ -65,4 +72,3 @@ volumes:
 networks:
   flare-network:
     driver: bridge
-

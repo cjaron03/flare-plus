@@ -1,8 +1,11 @@
 """flask application for model serving."""
 
 import logging
+import os
+import subprocess
+import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -10,6 +13,10 @@ from flask_cors import CORS
 from src.api.service import PredictionService
 from src.models.pipeline import ClassificationPipeline
 from src.models.survival_pipeline import SurvivalAnalysisPipeline
+from src.data.ingestion import DataIngestionPipeline
+from src.data.database import get_database
+from src.data.schema import SystemValidationLog
+from src.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +49,85 @@ def create_app(
         """health check endpoint."""
         status = service.health_check()
         return jsonify(status), 200
+
+    @app.route("/validate/system", methods=["POST"])
+    def trigger_system_validation():
+        """trigger end-to-end system validation run."""
+
+        def truncate(text: str, limit: int = 6000) -> str:
+            if text is None:
+                return ""
+            if len(text) <= limit:
+                return text
+            return text[:limit] + "\n...[truncated]..."
+
+        try:
+            payload = request.get_json(silent=True) or {}
+            initiated_by = payload.get("initiated_by") or "api"
+
+            env = os.environ.copy()
+            env["VALIDATION_INITIATED_BY"] = initiated_by
+            cmd = [sys.executable, str(PROJECT_ROOT / "scripts" / "validate_system.py")]
+
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=PROJECT_ROOT,
+                timeout=900,
+                env=env,
+            )
+
+            response_data = {
+                "returncode": completed.returncode,
+                "stdout": truncate(completed.stdout),
+                "stderr": truncate(completed.stderr),
+            }
+
+            status_code = 200 if completed.returncode == 0 else 400
+            return jsonify(response_data), status_code
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "validation timed out"}), 504
+        except Exception as e:
+            logger.error(f"system validation trigger failed: {e}", exc_info=True)
+            return jsonify({"error": "failed to trigger validation"}), 500
+
+    @app.route("/validation/logs", methods=["GET"])
+    def list_validation_logs():
+        """return recent validation runs for admin dashboard."""
+        try:
+            limit_param = request.args.get("limit", default="10")
+            try:
+                limit = min(max(int(limit_param), 1), 100)
+            except ValueError:
+                limit = 10
+
+            db = get_database()
+            with db.get_session() as session:
+                logs = (
+                    session.query(SystemValidationLog)
+                    .order_by(SystemValidationLog.run_timestamp.desc())
+                    .limit(limit)
+                    .all()
+                )
+
+                payload = [
+                    {
+                        "id": log.id,
+                        "run_timestamp": log.run_timestamp.isoformat(),
+                        "status": log.status,
+                        "validation_type": log.validation_type,
+                        "guardrail_triggered": log.guardrail_triggered,
+                        "guardrail_reason": log.guardrail_reason,
+                        "initiated_by": log.initiated_by,
+                    }
+                    for log in logs
+                ]
+
+            return jsonify({"logs": payload}), 200
+        except Exception as e:
+            logger.error(f"failed to fetch validation logs: {e}", exc_info=True)
+            return jsonify({"error": "failed to fetch validation logs"}), 500
 
     @app.route("/predict/classification", methods=["POST"])
     def predict_classification():
@@ -165,5 +251,109 @@ def create_app(
         except Exception as e:
             logger.error(f"combined prediction error: {e}", exc_info=True)
             return jsonify({"error": "internal server error"}), 500
+
+    def determine_overall_status(results: Dict[str, Any]) -> str:
+        """
+        determine overall ingestion status based on individual data type statuses.
+
+        args:
+            results: ingestion results dict with xray_flux, solar_regions, magnetogram, flare_events
+
+        returns:
+            "success" (all succeeded), "partial" (some succeeded), or "failed" (all failed)
+        """
+        statuses = []
+
+        # check each data type's status field
+        for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+            if key in results and results[key] is not None:
+                result_data = results[key]
+                status = result_data.get("status", "failed")
+                statuses.append(status)
+
+        if not statuses:
+            return "failed"
+
+        success_count = sum(1 for s in statuses if s == "success")
+        total_count = len(statuses)
+
+        if success_count == total_count:
+            return "success"
+        elif success_count > 0:
+            return "partial"
+        else:
+            return "failed"
+
+    @app.route("/ingest", methods=["POST"])
+    def ingest():
+        """
+        data ingestion endpoint (day 2: with duration tracking).
+
+        request body (optional):
+            {
+                "use_cache": true  # optional, defaults to true
+            }
+
+        returns:
+            {
+                "status": "success",
+                "duration": 4.2,  # seconds
+                "results": {...}
+            }
+        """
+        # day 4: add partial failure logic
+        start_time = datetime.utcnow()
+
+        try:
+            data = request.get_json() if request.is_json else {}
+            use_cache = data.get("use_cache", True)
+
+            logger.info("starting data ingestion")
+            pipeline = DataIngestionPipeline()
+            results = pipeline.run_incremental_update(use_cache=use_cache)
+
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+
+            # determine overall status by checking each data type's status field
+            overall_status = determine_overall_status(results)
+
+            # format results with status for each data type
+            formatted_results = {}
+            for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+                if key in results and results[key] is not None:
+                    result_data = results[key]
+                    status = result_data.get("status", "failed")
+                    formatted_results[key] = {"status": status}
+
+                    # add records/error info based on status
+                    if status == "success":
+                        if key == "xray_flux":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "solar_regions":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "magnetogram":
+                            formatted_results[key]["records"] = result_data.get("records_inserted", 0)
+                        elif key == "flare_events":
+                            formatted_results[key]["new"] = result_data.get("records_inserted", 0)
+                            formatted_results[key]["duplicates"] = result_data.get("records_updated", 0)
+                    else:
+                        formatted_results[key]["error"] = result_data.get(
+                            "error", result_data.get("error_message", "unknown error")
+                        )
+
+            # determine http status code
+            http_status = 200 if overall_status in ["success", "partial"] else 500
+
+            return (
+                jsonify({"overall_status": overall_status, "duration": duration, "results": formatted_results}),
+                http_status,
+            )
+
+        except Exception as e:
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            logger.error(f"ingestion error: {e}", exc_info=True)
+            return jsonify({"overall_status": "failed", "error": str(e), "duration": duration, "results": {}}), 500
 
     return app

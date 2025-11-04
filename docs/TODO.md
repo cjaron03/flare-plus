@@ -96,8 +96,20 @@
   - [OK] Comprehensive test suite (19 tests covering all endpoints and monitoring)
 
 ## UI Prototype
-- [ ] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
-- [ ] Add controls for scenario exploration (e.g., tweak sunspot metrics) and display NOAA source links.
+- [x] Build lightweight dashboard (Streamlit/Gradio) showing current probabilities and historical flare timelines.
+  - [OK] Gradio-based dashboard implemented with modular structure
+  - [OK] Predictions tab: classification and survival analysis with plain language summaries
+  - [OK] Timeline tab: historical flare event visualization with Plotly charts
+  - [OK] About tab: NOAA source links, author attribution (Jaron Cabral), limitations disclaimer
+  - [OK] Hybrid connection: API-first with fallback to direct model loading
+  - [OK] Performance throttling for refresh operations
+  - [OK] Data freshness indicators in sidebar
+  - [NOTE] Scenario exploration tab placeholder (requires full feature recalculation - future enhancement)
+- [x] Add controls for scenario exploration (e.g., tweak sunspot metrics) and display NOAA source links.
+  - [OK] NOAA source links displayed in About tab (from config.yaml)
+  - [OK] Author attribution (Jaron Cabral) prominently displayed
+  - [OK] Limitations clearly marked throughout UI
+  - [NOTE] Scenario controls simplified (full implementation requires feature engineering recalculation)
 
 ## Validation & Ops
 - [ ] Backtest against recent solar cycles; compare against NOAA forecasts.
@@ -121,6 +133,13 @@
 ## Extended Data Sources
 - [ ] Explore integrating SDO/AIA imagery, SOHO data, or helioseismology signals for richer context.
 - [ ] Evaluate solar wind and CME catalogs as auxiliary predictors for time-to-event modeling.
+
+## UI & Access Control Enhancements
+- [ ] Extend `/health` (or add new endpoint) to return structured guardrail status, last validation timestamp, and ingestion health for UI consumption.
+- [ ] Add lightweight admin authentication (simple login tab in Gradio) that toggles an `is_admin` flag for the dashboard session.
+- [ ] Create an admin-only system health panel showing survival guardrail messages, validation history, and manual retry instructions.
+- [ ] Update visitor-facing views to display only high-level confidence indicators (e.g., “Predictions under review”) without exposing internal warnings.
+- [ ] Document operational workflow for responding to guardrail failures, including when to retrain and how to re-run `./flare validate`.
 
 ## Future Research Directions
 - [ ] Investigate hybrid physics-informed ML approaches or transfer learning from NASA datasets.

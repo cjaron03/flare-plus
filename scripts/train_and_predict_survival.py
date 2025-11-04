@@ -166,6 +166,7 @@ def train_model(
     region_number: int = None,
     model_types: list = None,
     target_flare_class: str = "X",
+    allow_insufficient_data: bool = False,
 ) -> SurvivalAnalysisPipeline:
     """
     train survival analysis model on historical data.
@@ -207,7 +208,15 @@ def train_model(
         print("Predictions are for DEMONSTRATION/LEARNING purposes only.")
         print("\nSee docs/DATA_COLLECTION_GUIDE.md for how to get more data.")
         print("=" * 70)
-        print("\nProceeding with training (demonstration mode)...")
+        if not allow_insufficient_data:
+            error_msg = (
+                f"Insufficient data for {target_flare_class}-class survival training "
+                f"(have {stats['target_class_flares']}, require {required}). "
+                "Re-run after collecting more events or pass --allow-insufficient-data to override."
+            )
+            print("\nTraining aborted due to insufficient data.\n")
+            raise ValueError(error_msg)
+        print("\nProceeding with training (override: --allow-insufficient-data)...")
         print("=" * 70 + "\n")
     else:
         print(f"\n[OK] Sufficient data for {target_flare_class}-class training")
@@ -525,6 +534,11 @@ def main():
         action="store_true",
         help="detect flares from historical flux data before training",
     )
+    parser.add_argument(
+        "--allow-insufficient-data",
+        action="store_true",
+        help="override data sufficiency guardrail (not recommended for production)",
+    )
 
     args = parser.parse_args()
 
@@ -587,6 +601,7 @@ def main():
                 region_number=args.region,
                 model_types=args.train_models,
                 target_flare_class=args.target_class,
+                allow_insufficient_data=args.allow_insufficient_data,
             )
             logger.info("model training complete")
 

@@ -159,12 +159,37 @@ class ClassificationPipeline:
             from sklearn.model_selection import train_test_split
 
             # prepare features and labels
+            # exclude label columns and historical features (max_magnitude, flare_classes)
             exclude_cols = ["timestamp", "region_number"] + [
                 col
                 for col in dataset.columns
-                if col.startswith("label_") or col.startswith("num_flares_")
+                if (
+                    col.startswith("label_")
+                    or col.startswith("num_flares_")
+                    or col.startswith("max_magnitude_")
+                    or col.startswith("flare_classes_")
+                )
             ]
-            feature_cols = [col for col in dataset.columns if col not in exclude_cols]
+
+            # only include numeric columns (exclude string/object columns)
+            feature_cols = [
+                col for col in dataset.columns
+                if col not in exclude_cols
+                and pd.api.types.is_numeric_dtype(dataset[col])
+            ]
+
+            if len(feature_cols) == 0:
+                raise ValueError("no numeric feature columns found in dataset")
+
+            # check for any remaining non-numeric columns
+            non_numeric = [
+                col for col in feature_cols
+                if not pd.api.types.is_numeric_dtype(dataset[col])
+            ]
+            if non_numeric:
+                logger.warning(f"excluding non-numeric columns from features: {non_numeric}")
+                feature_cols = [col for col in feature_cols if col not in non_numeric]
+
             X = dataset[feature_cols].values
             y = dataset[label_col].values
 
@@ -174,8 +199,14 @@ class ClassificationPipeline:
             y_encoded = label_encoder.fit_transform(y)
             classes = label_encoder.classes_.tolist()
 
-            # handle missing values
+            # handle missing values - ensure X is numeric
             X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+
+            # ensure X is float type (not object/string)
+            if X.dtype == object:
+                logger.error(f"feature matrix contains non-numeric data. columns: {feature_cols}")
+                logger.error(f"data types: {dataset[feature_cols].dtypes.to_dict()}")
+                raise ValueError("feature matrix must be numeric but contains object/string data")
 
             # split train/test
             X_train, X_test, y_train, y_test = train_test_split(
@@ -319,6 +350,16 @@ class ClassificationPipeline:
             raise ValueError("could not compute features")
 
         # extract features in correct order
+        # handle missing features (e.g., max_magnitude_* which are historical labels)
+        missing_features = [f for f in feature_names if f not in features_df.columns]
+        if missing_features:
+            logger.warning(
+                f"missing features in computed data (will default to 0): {missing_features}"
+            )
+            # add missing features as 0
+            for feat in missing_features:
+                features_df[feat] = 0.0
+
         X = features_df[feature_names].values
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 

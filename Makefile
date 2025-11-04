@@ -1,65 +1,144 @@
 # flare+ makefile for common development tasks
+# note: ./flare script is the preferred/default way to run commands
+# this makefile provides make targets that call ./flare for convenience
 
-.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest
+.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest api api-bg api-stop api-logs ui ui-bg ui-stop ui-logs ingest-api validate validate-model check-config
 
 help:
-	@echo "flare+ development commands:"
+	@echo "flare+ development commands"
+	@echo ""
+	@echo "preferred usage: ./flare <command>"
+	@echo "  (see ./flare help for full command list)"
+	@echo ""
+	@echo "makefile targets (wrappers around ./flare):"
+	@echo ""
+	@echo "docker services:"
 	@echo "  make build        - build docker images"
-	@echo "  make up           - start all services"
-	@echo "  make down         - stop all services"
-	@echo "  make logs         - view logs (ctrl+c to exit)"
-	@echo "  make shell        - open shell in app container"
-	@echo "  make db-shell     - open psql shell in database"
+	@echo "  make up           - start all docker services (postgres, app)"
+	@echo "  make down         - stop all docker services"
+	@echo "  make logs         - view logs from all services (ctrl+c to exit)"
+	@echo "  make shell        - open interactive shell in app container"
+	@echo "  make db-shell     - open psql shell in database container"
+	@echo "  make clean        - remove containers and volumes (cleanup)"
+	@echo ""
+	@echo "database:"
+	@echo "  make init-db      - initialize database schema"
+	@echo "  make ingest       - run data ingestion from noaa sources (direct script)"
+	@echo ""
+	@echo "services (api & ui):"
+	@echo "  make api          - start flask api server (foreground, http://127.0.0.1:5000)"
+	@echo "  make api-bg       - start flask api server in background"
+	@echo "  make api-stop     - stop api server"
+	@echo "  make api-logs     - view api server logs"
+	@echo "  make ui           - start gradio ui dashboard (foreground, http://127.0.0.1:7860)"
+	@echo "  make ui-bg        - start gradio ui dashboard in background"
+	@echo "  make ui-stop      - stop ui dashboard"
+	@echo "  make ui-logs      - view ui dashboard logs"
+	@echo "  make ingest-api   - trigger data ingestion via api endpoint (requires api running)"
+	@echo ""
+	@echo "development:"
 	@echo "  make test         - run test suite"
-	@echo "  make lint         - run linters"
+	@echo "  make lint         - run linters (flake8, black check)"
 	@echo "  make format       - format code with black"
 	@echo "  make format-check - check formatting without changing files"
-	@echo "  make clean        - remove containers and volumes"
-	@echo "  make init-db      - initialize database schema"
-	@echo "  make ingest       - run data ingestion"
+	@echo ""
+	@echo "validation:"
+	@echo "  make validate           - run full system validation"
+	@echo "  make validate-model     - validate specific model (MODEL_PATH required)"
+	@echo "  make check-config       - check environment configuration"
+	@echo ""
+	@echo "examples:"
+	@echo "  make up           # start docker services"
+	@echo "  make api          # start api server"
+	@echo "  make ui           # start ui dashboard"
+	@echo "  make ingest-api   # trigger ingestion via api"
+	@echo "  make validate     # run system validation"
+	@echo ""
+	@echo "or use ./flare directly:"
+	@echo "  ./flare up        # start docker services"
+	@echo "  ./flare api       # start api server"
+	@echo "  ./flare ui        # start ui dashboard"
+	@echo "  ./flare validate  # run system validation"
 
 build:
-	docker-compose build
+	./flare build
 
 up:
-	docker-compose up -d
-	@echo "services started!"
-	@echo "postgres: localhost:5432"
+	./flare up
 
 down:
-	docker-compose down
+	./flare down
 
 logs:
-	docker-compose logs -f
+	./flare logs
 
 shell:
-	docker-compose exec app /bin/bash
+	./flare shell
 
 db-shell:
-	docker-compose exec postgres psql -U postgres -d flare_prediction
+	./flare db-shell
 
 test:
-	docker-compose exec app pytest tests/ -v
+	./flare test
 
 lint:
-	docker-compose exec app flake8 src/ tests/
-	docker-compose exec app black --check src/ tests/ scripts/
+	./flare lint
 
 format:
-	docker-compose exec app black src/ tests/ scripts/
+	./flare format
 
 format-check:
 	docker-compose exec app black --check src/ tests/ scripts/
 
 clean:
-	docker-compose down -v
-	docker system prune -f
+	./flare clean
 
 init-db:
-	docker-compose exec app python scripts/init_db.py
+	./flare init-db
 
 ingest:
-	docker-compose exec app python scripts/run_ingestion.py
+	./flare ingest
+
+api:
+	./flare api
+
+api-bg:
+	./flare api-bg
+
+api-stop:
+	./flare api-stop
+
+api-logs:
+	./flare api-logs
+
+ui:
+	./flare ui
+
+ui-bg:
+	./flare ui-bg
+
+ui-stop:
+	./flare ui-stop
+
+ui-logs:
+	./flare ui-logs
+
+ingest-api:
+	./flare ingest-api
+
+validate:
+	./flare validate
+
+validate-model:
+	@if [ -z "$(MODEL_PATH)" ]; then \
+		echo "Error: MODEL_PATH required"; \
+		echo "Usage: make validate-model MODEL_PATH=/app/models/survival_model.joblib"; \
+		exit 1; \
+	fi
+	./flare validate-model "$(MODEL_PATH)"
+
+check-config:
+	./flare check-config
 
 # local development (without docker)
 .PHONY: local-install local-test local-lint local-format

@@ -13,6 +13,10 @@ pylint>=3.0.0
 radon>=6.0.0
 isort>=5.13.0
 
+# type stubs
+types-PyYAML>=6.0.0
+types-requests>=2.31.0
+
 # security
 pre-commit>=3.5.0
 safety>=2.3.0
@@ -20,6 +24,9 @@ bandit>=1.7.0
 
 # ui/visualization (dev only)
 streamlit>=1.28.0
+gradio>=4.0.0,<5.0.0
+huggingface_hub<0.20.0  # required for gradio 4.x compatibility (HfFolder support)
+plotly>=5.0.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 

@@ -95,3 +95,36 @@ class DataConfig:
 
     # endpoints from config
     ENDPOINTS = CONFIG["data_ingestion"]["endpoints"]
+
+
+class AdminConfig:
+    """admin access configuration for dashboard authentication."""
+
+    ACCESS_TOKEN = os.getenv("ADMIN_ACCESS_TOKEN")
+    RUNTIME_TOKEN = os.getenv("ADMIN_RUNTIME_TOKEN")
+    STATUS_MESSAGE = os.getenv("ADMIN_STATUS_MESSAGE", "Admin access enabled.")
+
+    @classmethod
+    def has_access(cls) -> bool:
+        """return true if admin access is currently granted for this session."""
+        if not cls.ACCESS_TOKEN:
+            return False
+        if not cls.RUNTIME_TOKEN:
+            return False
+        return cls.ACCESS_TOKEN == cls.RUNTIME_TOKEN
+
+    @classmethod
+    def disabled_reason(cls) -> str:
+        """provide reason admin tools are disabled."""
+        if not cls.ACCESS_TOKEN:
+            return "Admin tools unavailable. Set ADMIN_ACCESS_TOKEN to configure secure access."
+        if not cls.RUNTIME_TOKEN:
+            return "Admin tools locked. Launch the dashboard with ADMIN_RUNTIME_TOKEN matching ADMIN_ACCESS_TOKEN."
+        if cls.RUNTIME_TOKEN != cls.ACCESS_TOKEN:
+            return "Invalid admin runtime token. Restart the dashboard with a matching ADMIN_RUNTIME_TOKEN."
+        return ""
+
+    @classmethod
+    def status_indicator(cls) -> str:
+        """return human-friendly status indicator text."""
+        return cls.STATUS_MESSAGE if cls.has_access() else "Admin access disabled."

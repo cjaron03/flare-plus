@@ -1,5 +1,6 @@
 """monitoring hooks for input drift detection and outcome logging."""
 
+import json
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -8,6 +9,9 @@ import numpy as np
 import pandas as pd
 
 from scipy import stats
+
+from src.data.database import get_database
+from src.data.schema import PredictionLog
 
 logger = logging.getLogger(__name__)
 
@@ -129,10 +133,16 @@ class InputDriftDetector:
 class OutcomeLogger:
     """log predictions and actual outcomes for monitoring."""
 
-    def __init__(self):
-        """initialize outcome logger."""
+    def __init__(self, persist_to_db: bool = True):
+        """
+        initialize outcome logger.
+
+        args:
+            persist_to_db: if True, save predictions to database
+        """
         self.predictions: List[Dict[str, Any]] = []
-        self.max_predictions = 10000  # keep last 10k predictions
+        self.max_predictions = 10000  # keep last 10k predictions in memory
+        self.persist_to_db = persist_to_db
 
     def log_prediction(
         self,
@@ -150,6 +160,7 @@ class OutcomeLogger:
             timestamp: observation timestamp
             region_number: optional region number
         """
+        # log to in-memory list
         log_entry = {
             "prediction_id": len(self.predictions),
             "timestamp": timestamp.isoformat(),
@@ -165,6 +176,13 @@ class OutcomeLogger:
         # maintain max size
         if len(self.predictions) > self.max_predictions:
             self.predictions = self.predictions[-self.max_predictions :]  # noqa: E203
+
+        # persist to database if enabled
+        if self.persist_to_db:
+            try:
+                self._save_to_database(prediction, prediction_type, timestamp, region_number)
+            except Exception as e:
+                logger.error(f"failed to persist prediction to database: {e}", exc_info=True)
 
     def update_outcome(
         self,
@@ -230,3 +248,108 @@ class OutcomeLogger:
             metrics["survival_predictions_count"] = len(survival_completed)
 
         return metrics
+
+    def _save_to_database(
+        self,
+        prediction: Dict[str, Any],
+        prediction_type: str,
+        timestamp: datetime,
+        region_number: Optional[int] = None,
+    ):
+        """
+        save prediction to database.
+
+        args:
+            prediction: prediction dict
+            prediction_type: 'classification' or 'survival'
+            timestamp: observation timestamp
+            region_number: optional region number
+        """
+        db = get_database()
+
+        # extract relevant fields from prediction dict
+        model_type = prediction.get("model_type")
+        window_hours = prediction.get("window")
+        predicted_class = prediction.get("predicted_class")
+        class_probs = prediction.get("probabilities") or prediction.get("class_probabilities")
+        prob_dist = prediction.get("probability_distribution")
+        hazard_score = prediction.get("hazard_score")
+
+        # convert dicts to json strings for storage
+        class_probs_json = json.dumps(class_probs) if class_probs else None
+        prob_dist_json = json.dumps(prob_dist) if prob_dist else None
+
+        with db.get_session() as session:
+            pred_log = PredictionLog(
+                prediction_timestamp=datetime.utcnow(),
+                observation_timestamp=timestamp,
+                prediction_type=prediction_type,
+                region_number=region_number,
+                model_type=model_type,
+                window_hours=window_hours,
+                predicted_class=predicted_class,
+                class_probabilities=class_probs_json,
+                probability_distribution=prob_dist_json,
+                hazard_score=hazard_score,
+            )
+            session.add(pred_log)
+            session.commit()
+            logger.debug(f"saved prediction to database: id={pred_log.id}")
+
+    def get_predictions_from_db(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        prediction_type: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        retrieve predictions from database.
+
+        args:
+            start_date: filter predictions after this date
+            end_date: filter predictions before this date
+            prediction_type: filter by prediction type ('classification' or 'survival')
+            limit: maximum number of predictions to return
+
+        returns:
+            list of prediction dicts
+        """
+        db = get_database()
+        predictions = []
+
+        with db.get_session() as session:
+            query = session.query(PredictionLog)
+
+            if start_date:
+                query = query.filter(PredictionLog.prediction_timestamp >= start_date)
+            if end_date:
+                query = query.filter(PredictionLog.prediction_timestamp <= end_date)
+            if prediction_type:
+                query = query.filter(PredictionLog.prediction_type == prediction_type)
+
+            query = query.order_by(PredictionLog.prediction_timestamp.desc()).limit(limit)
+
+            for pred_log in query.all():
+                pred_dict = {
+                    "id": pred_log.id,
+                    "prediction_timestamp": pred_log.prediction_timestamp.isoformat(),
+                    "observation_timestamp": pred_log.observation_timestamp.isoformat(),
+                    "prediction_type": pred_log.prediction_type,
+                    "region_number": pred_log.region_number,
+                    "model_type": pred_log.model_type,
+                    "window_hours": pred_log.window_hours,
+                    "predicted_class": pred_log.predicted_class,
+                    "class_probabilities": (
+                        json.loads(pred_log.class_probabilities) if pred_log.class_probabilities else None
+                    ),
+                    "probability_distribution": (
+                        json.loads(pred_log.probability_distribution) if pred_log.probability_distribution else None
+                    ),
+                    "hazard_score": pred_log.hazard_score,
+                    "actual_flare_class": pred_log.actual_flare_class,
+                    "actual_flare_time": pred_log.actual_flare_time.isoformat() if pred_log.actual_flare_time else None,
+                }
+                predictions.append(pred_dict)
+
+        return predictions

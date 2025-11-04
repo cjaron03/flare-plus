@@ -237,6 +237,12 @@ class PredictionService:
         returns:
             dict with service status
         """
+        import shutil
+        from src.data.database import get_database
+        from src.data.schema import DataIngestionLog, PredictionLog, SystemValidationLog
+        from src.config import PROJECT_ROOT
+        from sqlalchemy import func, text
+
         status = {
             "status": "healthy",
             "classification_available": False,
@@ -245,6 +251,7 @@ class PredictionService:
             "outcome_logging_enabled": self.outcome_logger is not None,
         }
 
+        # check model availability
         if self.classification_pipeline and self.classification_pipeline.models:
             status["classification_available"] = True
 
@@ -254,8 +261,92 @@ class PredictionService:
         if not status["classification_available"] and not status["survival_available"]:
             status["status"] = "degraded"
 
+        # check database connection
+        try:
+            db = get_database()
+            with db.get_session() as session:
+                session.execute(text("SELECT 1"))
+                status["database_connected"] = True
+
+                # get last ingestion timestamp
+                last_ingestion = (
+                    session.query(DataIngestionLog)
+                    .filter(DataIngestionLog.status == "success")
+                    .order_by(DataIngestionLog.run_timestamp.desc())
+                    .first()
+                )
+
+                if last_ingestion:
+                    status["last_ingestion"] = last_ingestion.run_timestamp.isoformat()
+                else:
+                    status["last_ingestion"] = None
+
+                # get prediction count
+                pred_count = session.query(func.count(PredictionLog.id)).scalar()
+                status["total_predictions_logged"] = pred_count
+
+                latest_validation = (
+                    session.query(SystemValidationLog).order_by(SystemValidationLog.run_timestamp.desc()).first()
+                )
+
+                if latest_validation:
+                    status["validation"] = {
+                        "run_timestamp": latest_validation.run_timestamp.isoformat(),
+                        "status": latest_validation.status,
+                        "guardrail_triggered": latest_validation.guardrail_triggered,
+                        "guardrail_reason": latest_validation.guardrail_reason,
+                    }
+                else:
+                    status["validation"] = None
+
+        except Exception as e:
+            logger.error(f"database health check failed: {e}")
+            status["database_connected"] = False
+            status["last_ingestion"] = None
+            status["status"] = "degraded"
+            status["validation"] = None
+
+        # check disk space
+        try:
+            disk_stats = shutil.disk_usage(PROJECT_ROOT)
+            free_gb = disk_stats.free / (1024**3)
+            total_gb = disk_stats.total / (1024**3)
+
+            status["disk_space"] = {
+                "free_gb": round(free_gb, 2),
+                "total_gb": round(total_gb, 2),
+                "percent_free": round((disk_stats.free / disk_stats.total) * 100, 1),
+            }
+
+            if free_gb < 1.0:
+                status["status"] = "degraded"
+                status["warnings"] = status.get("warnings", [])
+                status["warnings"].append("low disk space")
+
+        except Exception as e:
+            logger.error(f"disk space check failed: {e}")
+            status["disk_space"] = None
+
+        validation_info = status.get("validation")
+        if validation_info:
+            guardrail_active = validation_info.get("guardrail_triggered", False)
+            status["survival_guardrail"] = guardrail_active
+            status["confidence_level"] = "low" if guardrail_active else "normal"
+            if guardrail_active and status.get("status") == "healthy":
+                status["status"] = "degraded"
+            if guardrail_active:
+                status.setdefault("warnings", [])
+                reason = validation_info.get("guardrail_reason") or "survival validation guardrail triggered"
+                status["warnings"].append(reason)
+        else:
+            status["survival_guardrail"] = False
+            status["confidence_level"] = "unknown"
+
         # add performance metrics if outcome logging enabled
         if self.outcome_logger:
-            status["performance_metrics"] = self.outcome_logger.get_performance_metrics()
+            try:
+                status["performance_metrics"] = self.outcome_logger.get_performance_metrics()
+            except Exception as e:
+                logger.error(f"performance metrics retrieval failed: {e}")
 
         return status
