@@ -2,7 +2,7 @@
 # note: ./flare script is the preferred/default way to run commands
 # this makefile provides make targets that call ./flare for convenience
 
-.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest api api-bg api-stop api-logs ui ui-bg ui-stop ui-logs ingest-api
+.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest api api-bg api-stop api-logs ui ui-bg ui-stop ui-logs ingest-api validate validate-model check-config
 
 help:
 	@echo "flare+ development commands"
@@ -42,16 +42,23 @@ help:
 	@echo "  make format       - format code with black"
 	@echo "  make format-check - check formatting without changing files"
 	@echo ""
+	@echo "validation:"
+	@echo "  make validate           - run full system validation"
+	@echo "  make validate-model     - validate specific model (MODEL_PATH required)"
+	@echo "  make check-config       - check environment configuration"
+	@echo ""
 	@echo "examples:"
 	@echo "  make up           # start docker services"
 	@echo "  make api          # start api server"
 	@echo "  make ui           # start ui dashboard"
 	@echo "  make ingest-api   # trigger ingestion via api"
+	@echo "  make validate     # run system validation"
 	@echo ""
 	@echo "or use ./flare directly:"
 	@echo "  ./flare up        # start docker services"
 	@echo "  ./flare api       # start api server"
 	@echo "  ./flare ui        # start ui dashboard"
+	@echo "  ./flare validate  # run system validation"
 
 build:
 	./flare build
@@ -118,6 +125,20 @@ ui-logs:
 
 ingest-api:
 	./flare ingest-api
+
+validate:
+	./flare validate
+
+validate-model:
+	@if [ -z "$(MODEL_PATH)" ]; then \
+		echo "Error: MODEL_PATH required"; \
+		echo "Usage: make validate-model MODEL_PATH=/app/models/survival_model.joblib"; \
+		exit 1; \
+	fi
+	./flare validate-model "$(MODEL_PATH)"
+
+check-config:
+	./flare check-config
 
 # local development (without docker)
 .PHONY: local-install local-test local-lint local-format

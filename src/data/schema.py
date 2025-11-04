@@ -1,7 +1,7 @@
 """database schema definitions for flare+ data storage."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, Index, UniqueConstraint, Text
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -199,3 +199,24 @@ class PredictionLog(Base):  # type: ignore[misc,valid-type]
 
     def __repr__(self):
         return f"<PredictionLog(id={self.id}, type={self.prediction_type}, timestamp={self.prediction_timestamp})>"
+
+
+class SystemValidationLog(Base):  # type: ignore[misc,valid-type]
+    """log of system validation runs and guardrail status."""
+
+    __tablename__ = "flare_system_validation_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    validation_type = Column(String(50), default="system", nullable=False)
+    status = Column(String(20), nullable=False)  # pass / fail
+    guardrail_triggered = Column(Boolean, default=False, nullable=False)
+    guardrail_reason = Column(String(500))
+    details = Column(Text)  # optional json payload with more info
+    initiated_by = Column(String(100))  # optional identifier of who triggered the run
+
+    def __repr__(self):
+        return (
+            f"<SystemValidationLog(validation_type={self.validation_type}, status={self.status}, "
+            f"guardrail_triggered={self.guardrail_triggered}, run_timestamp={self.run_timestamp})>"
+        )

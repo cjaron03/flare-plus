@@ -6,6 +6,7 @@ from typing import Optional
 
 import gradio as gr
 
+from src.config import AdminConfig
 from src.ui.utils.helpers import get_prediction_service
 from src.ui.utils.data_queries import get_latest_data_timestamps, calculate_data_freshness
 from src.ui.utils.ingestion import (
@@ -19,6 +20,7 @@ from src.ui.tabs.predictions import build_predictions_tab
 from src.ui.tabs.timeline import build_timeline_tab
 from src.ui.tabs.scenario import build_scenario_tab
 from src.ui.tabs.about import build_about_tab
+from src.ui.tabs.admin import build_admin_tab
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,6 @@ def create_dashboard(
     api_url_state = gr.State(value=api_url_or_none)
     pipelines_state = gr.State(value=loaded_pipelines)
     last_refresh_state = gr.State(value=None)
-
     # create dashboard
     with gr.Blocks(title="Solar Flare Prediction Dashboard") as dashboard:
         # header
@@ -99,6 +100,18 @@ def create_dashboard(
                                 lines.append(f"**Models**: {', '.join(loaded_models)} loaded")
                             else:
                                 lines.append("**Models**: None loaded")
+
+                            confidence = model_status.get("confidence_level")
+                            if confidence:
+                                lines.append(f"**Confidence**: {str(confidence).title()}")
+
+                            if model_status.get("survival_guardrail"):
+                                reason = model_status.get("guardrail_reason") or "Survival guardrail active"
+                                lines.append(f"**Guardrail**: {reason}")
+
+                            last_validation = model_status.get("last_validation")
+                            if last_validation:
+                                lines.append(f"**Last Validation**: {last_validation}")
                         except Exception as e:
                             logger.warning(f"failed to query api model status: {e}")
                             lines.append("**Models**: Checking...")
@@ -110,6 +123,7 @@ def create_dashboard(
                     return "\n".join(lines)
 
                 connection_status = gr.Markdown(build_connection_status_text())
+                admin_indicator = gr.Markdown(f"**Admin Access**: {AdminConfig.status_indicator()}")
 
                 gr.Markdown("### Data Freshness")
 
@@ -270,6 +284,18 @@ def create_dashboard(
                                 lines.append(f"**Models**: {', '.join(loaded_models)} loaded")
                             else:
                                 lines.append("**Models**: None loaded")
+
+                            confidence = model_status.get("confidence_level")
+                            if confidence:
+                                lines.append(f"**Confidence**: {str(confidence).title()}")
+
+                            if model_status.get("survival_guardrail"):
+                                reason = model_status.get("guardrail_reason") or "Survival guardrail active"
+                                lines.append(f"**Guardrail**: {reason}")
+
+                            last_validation = model_status.get("last_validation")
+                            if last_validation:
+                                lines.append(f"**Last Validation**: {last_validation}")
                         except Exception as e:
                             logger.warning(f"failed to query api model status: {e}")
                             lines.append("**Models**: Checking...")
@@ -280,6 +306,10 @@ def create_dashboard(
 
                     return "\n".join(lines)
 
+                def update_connection_status_and_admin():
+                    """update connection status and admin indicator."""
+                    return update_connection_status(), f"**Admin Access**: {AdminConfig.status_indicator()}"
+
                 refresh_status_button.click(
                     fn=trigger_ingestion_and_refresh_status,
                     outputs=[data_status, ingestion_progress, ingestion_summary],
@@ -287,8 +317,8 @@ def create_dashboard(
 
                 # update connection status when refresh button is clicked
                 refresh_status_button.click(
-                    fn=update_connection_status,
-                    outputs=[connection_status],
+                    fn=update_connection_status_and_admin,
+                    outputs=[connection_status, admin_indicator],
                 )
 
             with gr.Column(scale=4):
@@ -310,6 +340,12 @@ def create_dashboard(
 
                     with gr.Tab("About"):
                         build_about_tab()
+
+                    with gr.Tab("Admin"):
+                        build_admin_tab(
+                            connection_state,
+                            api_url_state,
+                        )
 
         # footer
         gr.Markdown(

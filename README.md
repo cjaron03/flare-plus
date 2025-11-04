@@ -1,153 +1,336 @@
-# flare-plus solar flare prediction system
+# flare+ solar flare prediction system
 
 a machine learning system for predicting solar flares using noaa/swpc data.
 
 ## overview
 
-flare-plus implements short-term (24-48h) classification and time-to-event modeling for solar flare prediction. the system ingests real-time data from noaa goes satellites and solar region observations to predict flare probability and timing.
+flare+ implements short-term (24-48h) classification and time-to-event modeling for solar flare prediction. the system ingests real-time data from noaa goes satellites and solar region observations to predict flare probability and timing.
 
 ## features
 
-- **data ingestion**: automated fetching from noaa/swpc endpoints with caching and persistence
-  - goes x-ray flux data (real-time, ~5min cadence)
+- **data ingestion**: automated fetching from noaa/swpc endpoints
+  - goes x-ray flux data (real-time, 5min cadence)
   - solar region observations (daily updates)
   - magnetogram data extraction
   - automatic flare detection from flux data
-- **feature engineering**: comprehensive feature pipeline
+  - caching and persistence to postgresql
+
+- **feature engineering**: comprehensive pipeline
   - sunspot complexity metrics (mcinosh, mount wilson, magnetic complexity)
   - flux trend analysis (mean, max, trend, rate of change, acceleration)
   - rolling statistics over multiple time windows (6h, 12h, 24h)
   - recency-weighted flare counts with exponential decay
   - normalization and standardization with missing data handling
+
 - **24-48h classification**: predict flare class probability (none, c, m, x)
   - logistic regression and gradient boosting models
   - probability calibration (isotonic, sigmoid)
   - comprehensive evaluation metrics (brier score, roc-auc, reliability diagrams)
+
 - **time-to-event modeling**: survival analysis for flare timing prediction
   - cox proportional hazards and gradient boosting survival models
   - configurable target flare classes (x, m, or c)
   - probability distributions over time buckets (6h-168h)
   - concordance index (c-index) validation
   - time-varying covariates from recent conditions
-- **model persistence**: save/load trained models for production use
+
+- **model serving**: flask api with monitoring
+  - rest endpoints for classification and survival predictions
+  - health monitoring with database and disk space checks
+  - input drift detection
+  - outcome logging to database
+
+- **interactive ui**: gradio-based dashboard
+  - real-time predictions (classification and survival)
+  - historical flare event timeline with filters
+  - system health monitoring
+
+## quick start
+
+### prerequisites
+
+- docker and docker-compose
+- 2gb+ free disk space
+
+### setup and run
+
+1. clone repository and start services:
+```bash
+cd flare-plus
+./flare up
+```
+
+2. initialize database:
+```bash
+./flare init-db
+```
+
+3. ingest data:
+```bash
+./flare ingest
+```
+
+4. start api server:
+```bash
+./flare api-bg
+```
+
+5. start ui dashboard:
+```bash
+./flare ui-bg
+```
+
+6. access dashboard at http://127.0.0.1:7860
+
+### validate system
+
+before deployment, run full system validation:
+```bash
+./flare validate
+```
 
 ## project structure
 
 ```
 flare-plus/
 ├── src/
-│   ├── data/           # data ingestion, persistence, and flare detection
+│   ├── data/           # data ingestion, persistence, flare detection
 │   ├── features/       # feature engineering (complexity, trends, rolling stats)
 │   ├── models/         # ml models (classification and survival analysis)
-│   │   ├── labeling.py          # flare label creation for classification
-│   │   ├── training.py          # model training with cross-validation
-│   │   ├── evaluation.py        # model evaluation and calibration
-│   │   ├── pipeline.py         # classification pipeline
-│   │   ├── survival_labeling.py         # survival analysis labels
-│   │   ├── time_varying_covariates.py   # dynamic features for survival
-│   │   ├── survival_models.py          # cox ph and gb survival models
-│   │   └── survival_pipeline.py       # end-to-end survival pipeline
-│   ├── api/            # flask api (todo)
-│   └── ui/             # streamlit dashboard (todo)
+│   ├── api/            # flask api with monitoring and drift detection
+│   └── ui/             # gradio dashboard
 ├── scripts/
 │   ├── run_ingestion.py              # data ingestion script
-│   ├── init_db.py                   # database initialization
-│   └── train_and_predict_survival.py # survival model training/prediction
+│   ├── run_api_server.py             # api server
+│   ├── run_ui.py                     # ui dashboard
+│   ├── init_db.py                    # database initialization
+│   ├── validate_system.py            # end-to-end validation
+│   ├── validate_models.py            # model validation
+│   ├── check_config.py               # configuration validation
+│   └── train_and_predict_*.py        # model training scripts
+├── models/             # trained model artifacts (gitignored)
+├── data/cache/         # ingestion cache (gitignored)
 ├── docs/               # documentation and roadmap
 ├── config.yaml         # configuration
 ├── requirements.txt    # python dependencies
+├── docker-compose.yml  # docker services
+├── Makefile            # convenience targets
+├── flare               # main command wrapper
 └── README.md
-```
-
-## setup
-
-### prerequisites
-
-- python 3.9+ (3.9, 3.10, or 3.11)
-- postgresql 12+
-- docker and docker-compose (recommended)
-
-### installation
-
-1. clone the repository:
-```bash
-cd "flare-plus"
-```
-
-2. create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # on windows: venv\Scripts\activate
-```
-
-3. install dependencies:
-```bash
-pip install -r requirements.txt
-
-# for development (includes linting/formatting tools)
-pip install -r requirements-dev.txt
-```
-
-4. configure environment:
-```bash
-# create .env file with database credentials
-# example contents:
-# DATABASE_URL=postgresql://user:password@localhost:5432/flare_prediction
-```
-
-5. initialize database:
-```bash
-# using docker-compose (recommended)
-docker-compose up -d
-docker-compose exec app python scripts/init_db.py
-
-# or manually
-createdb flare_prediction
-python scripts/init_db.py
-```
-
-### docker setup (recommended)
-
-the project includes docker compose configuration for easy setup:
-
-```bash
-# build and start containers
-docker-compose up -d
-
-# run ingestion
-docker-compose exec app python scripts/run_ingestion.py
-
-# run model training
-docker-compose exec app python scripts/train_and_predict_survival.py --train --predict --target-class C
-
-# view logs
-docker-compose logs -f app
 ```
 
 ## usage
 
+all commands use the `./flare` wrapper script for consistency.
+
+### docker services
+
+```bash
+./flare up         # start all docker services (postgres, app)
+./flare down       # stop all docker services
+./flare logs       # view logs from all services
+./flare shell      # open interactive shell in app container
+./flare db-shell   # open psql shell in database
+./flare clean      # remove containers and volumes
+```
+
 ### data ingestion
 
-run incremental data update:
 ```bash
-docker-compose exec app python scripts/run_ingestion.py
+./flare ingest           # run data ingestion from noaa sources
+./flare ingest-api       # trigger ingestion via api endpoint
 ```
 
-or directly:
+ingestion fetches:
+- last 7 days of goes x-ray flux data
+- current active solar regions
+- magnetogram data from regions
+- automatically detects flare events from flux data
+
+### model serving (api)
+
 ```bash
-python scripts/run_ingestion.py
+./flare api              # start api server (foreground)
+./flare api-bg           # start api server in background
+./flare api-stop         # stop api server
+./flare api-logs         # view api server logs
 ```
 
-this will:
-- fetch last 7 days of goes x-ray flux data
-- fetch current active solar regions
-- extract magnetogram data from regions
-- automatically detect flare events from flux data
-- store all data in postgresql with caching
+api available at http://127.0.0.1:5001
 
-### training time-to-event survival models
+endpoints:
+- `GET /health` - health check with system status
+- `POST /predict/classification` - 24-48h flare class prediction
+- `POST /predict/survival` - time-to-event prediction
+- `POST /predict/all` - combined predictions
+- `POST /ingest` - trigger data ingestion
 
-train a survival model for predicting the next flare (c-class example):
+### ui dashboard
+
+```bash
+./flare ui               # start ui dashboard (foreground)
+./flare ui-bg            # start ui dashboard in background
+./flare ui-stop          # stop ui dashboard
+./flare ui-logs          # view ui dashboard logs
+```
+
+dashboard available at http://127.0.0.1:7860
+
+features:
+- real-time predictions (classification and survival)
+- historical flare event timeline with filters
+- system health monitoring
+- data source information and limitations
+
+### development
+
+```bash
+./flare test             # run test suite
+./flare lint             # run linters (flake8, black check)
+./flare format           # format code with black
+```
+
+### makefile shortcuts
+
+all `./flare` commands have equivalent `make` targets:
+
+```bash
+make up              # ./flare up
+make api-bg          # ./flare api-bg
+make ui-bg           # ./flare ui-bg
+make validate        # ./flare validate
+```
+
+## validation and testing
+
+flare+ includes comprehensive validation tools to ensure system reliability.
+
+### system validation
+
+run full end-to-end validation:
+
+```bash
+./flare validate
+```
+
+validates:
+- database connection and table integrity (5 required tables)
+- data ingestion from all noaa sources
+- model loading and reconstruction from saved format
+- prediction generation with valid outputs (no nan values)
+- api endpoint availability and health
+- full pipeline: ingestion → features → prediction → database logging
+
+output example:
+```
+======================================================================
+FLARE+ SYSTEM VALIDATOR
+======================================================================
+
+Testing database connection...
+  Table flare_goes_xray_flux: 11319 records
+  Table flare_solar_regions: 378 records
+  Table flare_events: 54 records
+  Table flare_ingestion_log: 72 records
+  Table flare_prediction_log: 2 records
+[PASS] Database connection test
+
+Testing data ingestion...
+  xray_flux: success (10075 records)
+  solar_regions: success (365 records)
+  magnetogram: success (365 records)
+  flare_events: success (0 records)
+[PASS] Data ingestion test
+
+...
+
+======================================================================
+VALIDATION SUMMARY
+======================================================================
+[PASS] Database Connection
+[PASS] Data Ingestion
+[PASS] Model Loading
+[PASS] Predictions
+[PASS] API Endpoint
+[PASS] Full Prediction Pipeline
+
+6/6 tests passed
+
+[OK] All system validation tests passed
+System is ready for deployment
+```
+
+### model validation
+
+validate a trained model:
+
+```bash
+./flare validate-model /app/models/survival_model.joblib
+```
+
+checks:
+- model loads without errors
+- required methods and attributes exist
+- predictions contain no nan values
+- probabilities sum to approximately 1.0
+- performance metrics meet thresholds (c-index > 0.5)
+- comparison with previous model version
+
+### configuration validation
+
+verify environment setup:
+
+```bash
+./flare check-config
+```
+
+validates:
+- .env file with required database credentials
+- config.yaml structure and required sections
+- database connection
+- required directories (models/, data/cache/)
+- disk space availability
+
+### prediction logging
+
+predictions are automatically logged to database for monitoring:
+
+```python
+from src.api.monitoring import OutcomeLogger
+
+# logger persists to flare_prediction_log table
+logger = OutcomeLogger(persist_to_db=True)
+
+# retrieve logged predictions
+predictions = logger.get_predictions_from_db(
+    prediction_type="classification",
+    start_date=datetime(2024, 1, 1),
+    limit=100
+)
+```
+
+### health monitoring
+
+check system health:
+
+```bash
+curl http://127.0.0.1:5001/health
+```
+
+response includes:
+- model availability status (classification/survival)
+- database connection status
+- last ingestion timestamp
+- total predictions logged
+- disk space information
+- drift detection status
+
+## training models
+
+### survival models
+
+train time-to-event survival model:
+
 ```bash
 docker-compose exec app python scripts/train_and_predict_survival.py \
   --train \
@@ -158,35 +341,37 @@ docker-compose exec app python scripts/train_and_predict_survival.py \
 ```
 
 options:
-- `--train`: train a new model
-- `--predict`: make a prediction after training
-- `--target-class`: target flare class (X, M, or C)
-- `--detect-flares`: detect flares from historical flux data first
-- `--load-model`: load a previously saved model
-- `--start-date` / `--end-date`: date range for training data
-- `--model`: which model to use for prediction (cox or gb)
+- `--train` - train new model
+- `--predict` - make prediction after training
+- `--target-class` - target flare class (X, M, or C)
+- `--detect-flares` - detect flares from historical flux first
+- `--load-model` - load previously saved model
+- `--start-date` / `--end-date` - training date range
+- `--model` - model type for prediction (cox or gb)
 
-example output:
+output example:
 ```
 ============================================================
 SOLAR FLARE TIME-TO-EVENT PREDICTION
 ============================================================
-timestamp: 2025-10-31 00:07:27
+timestamp: 2025-11-04 18:05:11
 model: COX
-hazard score: 2.3456
+hazard score: 1.234
 
 probability distribution (flare in time bucket):
 ------------------------------------------------------------
-  0h-6h          12.50%
-  6h-12h         15.30%
-  12h-24h        18.20%
-  24h-48h        22.10%
-  ...
+  0h-6h          8.5%
+  6h-12h         12.3%
+  12h-24h        18.7%
+  24h-48h        24.2%
+  48h-72h        15.8%
+  72h-168h       20.5%
 ```
 
-### training classification models
+### classification models
 
-use the classification pipeline to train short-term (24-48h) flare prediction models:
+train 24-48h classification model:
+
 ```python
 from src.models.pipeline import ClassificationPipeline
 from datetime import datetime
@@ -194,163 +379,115 @@ from datetime import datetime
 pipeline = ClassificationPipeline()
 dataset = pipeline.prepare_dataset(
     start_date=datetime(2024, 1, 1),
-    end_date=datetime.now(),  # or datetime.utcnow() for UTC
+    end_date=datetime.utcnow(),
     sample_interval_hours=1,
 )
 
 results = pipeline.train_and_evaluate(dataset, test_size=0.2)
 ```
 
-### scheduled updates
-
-configure scheduled updates using cron or system scheduler:
-```bash
-# example cron job - run every hour
-0 * * * * cd /path/to/flare-plus && docker-compose exec app python scripts/run_ingestion.py
-```
-
-### ui dashboard
-
-run the gradio-based interactive dashboard:
-
-```bash
-# using api (requires api server running)
-python3 scripts/run_ui.py --api-url http://127.0.0.1:5000
-
-# using direct model loading (fallback if api unavailable)
-python3 scripts/run_ui.py \
-    --classification-model models/classification_model.joblib \
-    --survival-model models/survival_model.joblib
-
-# custom port
-python3 scripts/run_ui.py --port 8080
-
-# create public share link
-python3 scripts/run_ui.py --share
-```
-
-the dashboard includes:
-- **predictions tab**: classification (24-48h) and survival analysis (time-to-event) predictions
-- **timeline tab**: historical flare event visualization with filters
-- **scenario tab**: what-if scenario exploration (planned)
-- **about tab**: data sources, methodology, limitations
-
-the dashboard uses a hybrid connection approach: it tries to connect to the api server first, and falls back to direct model loading if the api is unavailable.
-
 ## data sources
 
-all data comes from noaa space weather prediction center (swpc):
+all data from noaa space weather prediction center (swpc):
 
 - **goes xrs flux**: https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json
-  - update cadence: real-time (updates every ~5 minutes)
-  - data window: last 7 days via `goes_xrs_7day`, last 6 hours via `goes_xrs_6hour`
+  - real-time updates (every 5 minutes)
+  - last 7 days of data
+
 - **solar regions**: https://services.swpc.noaa.gov/json/solar_regions.json
-  - update cadence: daily (typically updated once per day around midnight UTC)
-  - data window: current active regions with historical tracking
+  - daily updates (around midnight utc)
+  - current active regions with tracking
+
 - **historical archive**: https://www.ncei.noaa.gov/data/goes-space-environment-monitor/
-  - requires manual download and processing
+  - manual download and processing required
 
-no api keys required - data is publicly accessible.
+no api keys required - all data publicly accessible.
 
-### recommended update frequency
+### update frequency
 
-- **production**: run ingestion every 60 minutes (default `UPDATE_INTERVAL_MINUTES=60`)
-  - ensures fresh data without excessive API calls
-  - cache window (48 hours) prevents redundant fetches
-- **development**: run manually as needed (`python scripts/run_ingestion.py`)
-
-## development status
-
-### completed
-
-- [x] project structure and configuration
-- [x] database schema for flux, regions, magnetograms, and flares
-- [x] noaa data fetchers with retry logic and caching
-- [x] automatic flare detection from x-ray flux data
-- [x] feature engineering pipeline
-  - sunspot complexity metrics (mcinosh, mount wilson)
-  - flux trend analysis and rolling statistics
-  - recency-weighted flare counts
-  - normalization and standardization
-- [x] 24-48h classification models
-  - logistic regression and gradient boosting
-  - probability calibration and evaluation metrics
-  - end-to-end training and prediction pipeline
-- [x] time-to-event survival analysis
-  - cox proportional hazards model
-  - gradient boosting survival model
-  - time-varying covariates
-  - probability distributions over time buckets
-  - command-line training and prediction script
-
-### in progress / planned
-
-- [ ] ui dashboard (gradio-based interactive interface)
-
-- [ ] model serving: flask api for probability endpoints
-- [ ] ui dashboard: streamlit interface for visualization
-- [ ] model monitoring: input drift detection and outcome logging
-- [ ] backtesting: validation against historical solar cycles
-- [ ] experiment tracking: mlflow/weights & biases integration
-
-see `docs/TODO.md` for the complete roadmap.
+- **production**: run ingestion every 60 minutes
+  - fresh data without excessive api calls
+  - 48-hour cache prevents redundant fetches
+- **development**: run manually as needed
 
 ## development setup
 
+### local development (without docker)
+
+```bash
+# install dependencies
+pip install uv
+uv pip install -r requirements-dev.txt
+
+# run tests
+pytest tests/ -v
+
+# lint and format
+flake8 src/ tests/
+black src/ tests/ scripts/
+```
+
 ### code formatting
 
-this project uses [black](https://black.readthedocs.io/) for consistent code formatting. all python files must be formatted with black before committing.
+this project uses black for consistent formatting.
 
-#### automatic formatting (recommended)
-
-install pre-commit hooks for automatic formatting on every commit:
-
+install pre-commit hooks for automatic formatting:
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-now black will automatically format your code before each commit, preventing ci failures.
-
-#### manual formatting
-
-format code manually using make commands:
-
+manual formatting:
 ```bash
-# using docker-compose (if containers are running)
-make format              # format all python files (src/, tests/, scripts/)
-make format-check        # check formatting without modifying files
-
-# local development (without docker)
-make local-format        # format using local python environment
+./flare format              # format all python files
+make format                 # alternative using make
+black src/ tests/ scripts/  # direct invocation
 ```
 
-or run black directly:
-
+check formatting:
 ```bash
-# format specific directories
-black src/ tests/ scripts/
-
-# check formatting without changes
 black --check src/ tests/ scripts/
-
-# format a single file
-black src/data/ingestion.py
 ```
 
-#### ci/cd
+all code must pass black formatting before merging.
 
-the ci pipeline runs `black --check` on all pull requests. if formatting issues are detected, the build will fail. to fix:
+### environment configuration
 
-1. run `make format` or `black src/ tests/ scripts/`
-2. commit the formatted files
-3. push to trigger ci again
+create `.env` file with database credentials:
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_NAME=flare_prediction
+```
 
-all code must pass black formatting checks before merging.
+configure system in `config.yaml`:
+```yaml
+data_ingestion:
+  cache_expiry_hours: 48
+  update_interval_minutes: 60
+
+model_training:
+  test_size: 0.2
+  random_state: 42
+```
+
+## scheduled updates
+
+configure cron for automatic updates:
+
+```bash
+# run ingestion every hour
+0 * * * * cd /path/to/flare-plus && ./flare ingest-api
+
+# daily model retraining (optional)
+0 2 * * * cd /path/to/flare-plus && docker-compose exec -T app python scripts/train_and_predict_survival.py --train --target-class C
+```
 
 ## contributing
 
-this is a personal project for learning and experimentation. the roadmap is documented in `docs/TODO.md`.
+this is a personal project for learning and experimentation. see `docs/TODO.md` for the roadmap.
 
 ## license
 

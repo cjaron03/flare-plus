@@ -13,6 +13,25 @@ from src.models.survival_pipeline import SurvivalAnalysisPipeline
 logger = logging.getLogger(__name__)
 
 
+def get_api_health_status(api_url: str) -> Optional[Dict[str, Any]]:
+    """
+    query api health endpoint and return full status payload.
+
+    args:
+        api_url: api base url
+
+    returns:
+        health status dict or None if unavailable
+    """
+    try:
+        response = requests.get(f"{api_url}/health", timeout=3)
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logger.warning(f"failed to query api health: {e}")
+    return None
+
+
 def get_prediction_service(
     api_url: str,
     classification_model_path: Optional[str] = None,
@@ -34,9 +53,8 @@ def get_prediction_service(
     """
     # try api connection first
     try:
-        health_url = f"{api_url}/health"
-        response = requests.get(health_url, timeout=2)
-        if response.status_code == 200:
+        health = get_api_health_status(api_url)
+        if health:
             logger.info(f"connected to api at {api_url}")
             return "api", api_url, None
     except requests.Timeout:
@@ -105,18 +123,25 @@ def get_api_model_status(api_url: str) -> Dict[str, bool]:
     returns:
         dict with model availability: {"classification": bool, "survival": bool}
     """
-    try:
-        health_url = f"{api_url}/health"
-        response = requests.get(health_url, timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "classification": data.get("classification_available", False),
-                "survival": data.get("survival_available", False),
-            }
-    except Exception as e:
-        logger.warning(f"failed to query api health: {e}")
-    return {"classification": False, "survival": False}
+    data = get_api_health_status(api_url)
+    if data:
+        validation = data.get("validation") or {}
+        return {
+            "classification": data.get("classification_available", False),
+            "survival": data.get("survival_available", False),
+            "confidence_level": data.get("confidence_level"),
+            "survival_guardrail": data.get("survival_guardrail"),
+            "guardrail_reason": validation.get("guardrail_reason"),
+            "last_validation": validation.get("run_timestamp"),
+        }
+    return {
+        "classification": False,
+        "survival": False,
+        "confidence_level": None,
+        "survival_guardrail": False,
+        "guardrail_reason": None,
+        "last_validation": None,
+    }
 
 
 def should_refresh(last_refresh: Optional[datetime], min_interval_minutes: int = 5) -> bool:

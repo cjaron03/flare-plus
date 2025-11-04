@@ -12,6 +12,7 @@ from src.ui.utils.helpers import (
     format_survival_plain_language,
     format_survival_probability_distribution,
     should_refresh,
+    get_api_model_status,
 )
 from src.ui.utils.charts import (
     create_probability_bar_chart,
@@ -286,6 +287,28 @@ def build_predictions_tab(
             "Note: These models answer different questions and may show different probabilities."
         )
 
+        def refresh_confidence_notice():
+            mode = connection_mode.value
+            api = api_url.value
+
+            if mode == "api" and api:
+                status = get_api_model_status(api)
+                confidence = status.get("confidence_level")
+                if confidence:
+                    text = f"**Prediction Confidence:** {str(confidence).title()}"
+                    if str(confidence).lower() == "low":
+                        reason = status.get("guardrail_reason")
+                        if reason:
+                            text += f" — {reason}"
+                        else:
+                            text += " — Survival model under review."
+                    return text
+                return "Prediction confidence unavailable (API did not report confidence)."
+
+            return "Prediction confidence unavailable. Connect to the API for live guardrail status."
+
+        confidence_notice = gr.Markdown(refresh_confidence_notice())
+
         with gr.Row():
             with gr.Column(scale=1):
                 timestamp_input = gr.DateTime(
@@ -373,11 +396,19 @@ def build_predictions_tab(
                     inputs=[timestamp_input, window_input, region_input, model_type_input],
                     outputs=[classification_text, classification_chart, status_output],
                 )
+                classify_button.click(
+                    fn=lambda: refresh_confidence_notice(),
+                    outputs=[confidence_notice],
+                )
 
                 refresh_button_class.click(
                     fn=lambda t, w, r, m: run_classification(t, w, r, m, True),
                     inputs=[timestamp_input, window_input, region_input, model_type_input],
                     outputs=[classification_text, classification_chart, status_output],
+                )
+                refresh_button_class.click(
+                    fn=lambda: refresh_confidence_notice(),
+                    outputs=[confidence_notice],
                 )
 
             with gr.Tab("Survival Analysis"):
@@ -463,6 +494,10 @@ def build_predictions_tab(
                         status_output,
                     ],
                 )
+                survival_button.click(
+                    fn=lambda: refresh_confidence_notice(),
+                    outputs=[confidence_notice],
+                )
 
                 refresh_button_survival.click(
                     fn=lambda t, r, m: run_survival(t, r, m, True),
@@ -474,6 +509,10 @@ def build_predictions_tab(
                         prob_dist_plot,
                         status_output,
                     ],
+                )
+                refresh_button_survival.click(
+                    fn=lambda: refresh_confidence_notice(),
+                    outputs=[confidence_notice],
                 )
 
     return tab

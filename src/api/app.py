@@ -1,6 +1,9 @@
 """flask application for model serving."""
 
 import logging
+import os
+import subprocess
+import sys
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -11,6 +14,9 @@ from src.api.service import PredictionService
 from src.models.pipeline import ClassificationPipeline
 from src.models.survival_pipeline import SurvivalAnalysisPipeline
 from src.data.ingestion import DataIngestionPipeline
+from src.data.database import get_database
+from src.data.schema import SystemValidationLog
+from src.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,85 @@ def create_app(
         """health check endpoint."""
         status = service.health_check()
         return jsonify(status), 200
+
+    @app.route("/validate/system", methods=["POST"])
+    def trigger_system_validation():
+        """trigger end-to-end system validation run."""
+
+        def truncate(text: str, limit: int = 6000) -> str:
+            if text is None:
+                return ""
+            if len(text) <= limit:
+                return text
+            return text[:limit] + "\n...[truncated]..."
+
+        try:
+            payload = request.get_json(silent=True) or {}
+            initiated_by = payload.get("initiated_by") or "api"
+
+            env = os.environ.copy()
+            env["VALIDATION_INITIATED_BY"] = initiated_by
+            cmd = [sys.executable, str(PROJECT_ROOT / "scripts" / "validate_system.py")]
+
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=PROJECT_ROOT,
+                timeout=900,
+                env=env,
+            )
+
+            response_data = {
+                "returncode": completed.returncode,
+                "stdout": truncate(completed.stdout),
+                "stderr": truncate(completed.stderr),
+            }
+
+            status_code = 200 if completed.returncode == 0 else 400
+            return jsonify(response_data), status_code
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "validation timed out"}), 504
+        except Exception as e:
+            logger.error(f"system validation trigger failed: {e}", exc_info=True)
+            return jsonify({"error": "failed to trigger validation"}), 500
+
+    @app.route("/validation/logs", methods=["GET"])
+    def list_validation_logs():
+        """return recent validation runs for admin dashboard."""
+        try:
+            limit_param = request.args.get("limit", default="10")
+            try:
+                limit = min(max(int(limit_param), 1), 100)
+            except ValueError:
+                limit = 10
+
+            db = get_database()
+            with db.get_session() as session:
+                logs = (
+                    session.query(SystemValidationLog)
+                    .order_by(SystemValidationLog.run_timestamp.desc())
+                    .limit(limit)
+                    .all()
+                )
+
+                payload = [
+                    {
+                        "id": log.id,
+                        "run_timestamp": log.run_timestamp.isoformat(),
+                        "status": log.status,
+                        "validation_type": log.validation_type,
+                        "guardrail_triggered": log.guardrail_triggered,
+                        "guardrail_reason": log.guardrail_reason,
+                        "initiated_by": log.initiated_by,
+                    }
+                    for log in logs
+                ]
+
+            return jsonify({"logs": payload}), 200
+        except Exception as e:
+            logger.error(f"failed to fetch validation logs: {e}", exc_info=True)
+            return jsonify({"error": "failed to fetch validation logs"}), 500
 
     @app.route("/predict/classification", methods=["POST"])
     def predict_classification():

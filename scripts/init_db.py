@@ -32,6 +32,8 @@ def main():
         print("  - flare_solar_magnetogram")
         print("  - flare_events")
         print("  - flare_ingestion_log")
+        print("  - flare_prediction_log")
+        print("  - flare_system_validation_log")
 
     except Exception as e:
         print(f"\nerror initializing database: {e}")

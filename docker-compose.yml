@@ -40,6 +40,10 @@ services:
       DATA_CACHE_HOURS: ${DATA_CACHE_HOURS:-48}
       UPDATE_INTERVAL_MINUTES: ${UPDATE_INTERVAL_MINUTES:-60}
       BACKFILL_START_DATE: ${BACKFILL_START_DATE:-2023-01-01}
+
+      # admin dashboard
+      ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
+      ADMIN_RUNTIME_TOKEN: ${ADMIN_RUNTIME_TOKEN:-}
       
       # python settings
       PYTHONUNBUFFERED: 1
@@ -68,4 +72,3 @@ volumes:
 networks:
   flare-network:
     driver: bridge
-

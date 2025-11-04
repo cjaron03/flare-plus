@@ -134,6 +134,13 @@
 - [ ] Explore integrating SDO/AIA imagery, SOHO data, or helioseismology signals for richer context.
 - [ ] Evaluate solar wind and CME catalogs as auxiliary predictors for time-to-event modeling.
 
+## UI & Access Control Enhancements
+- [ ] Extend `/health` (or add new endpoint) to return structured guardrail status, last validation timestamp, and ingestion health for UI consumption.
+- [ ] Add lightweight admin authentication (simple login tab in Gradio) that toggles an `is_admin` flag for the dashboard session.
+- [ ] Create an admin-only system health panel showing survival guardrail messages, validation history, and manual retry instructions.
+- [ ] Update visitor-facing views to display only high-level confidence indicators (e.g., “Predictions under review”) without exposing internal warnings.
+- [ ] Document operational workflow for responding to guardrail failures, including when to retrain and how to re-run `./flare validate`.
+
 ## Future Research Directions
 - [ ] Investigate hybrid physics-informed ML approaches or transfer learning from NASA datasets.
 - [ ] Prototype transformer-based sequence models for multi-day flare forecasting.

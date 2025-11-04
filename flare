@@ -73,7 +73,7 @@ case "$1" in
     fi
     
     echo ""
-    docker-compose exec app python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG
+    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG
     ;;
   api-stop)
     echo "stopping api server..."
@@ -105,7 +105,7 @@ case "$1" in
       SURVIVAL_ARG=""
     fi
     
-    docker-compose exec app bash -c "nohup python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG > /tmp/api.log 2>&1 &"
+    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app bash -c "nohup python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG > /tmp/api.log 2>&1 &"
     sleep 3
     if docker-compose exec app ps aux | grep -q "[r]un_api_server.py"; then
       echo "api server started in background (check logs with: ./flare api-logs)"
@@ -130,7 +130,7 @@ case "$1" in
     echo "note: api is accessible at http://127.0.0.1:5001 from host (5000 inside container)"
     echo "note: this will run in the foreground. use ctrl+c to stop."
     echo ""
-    docker-compose exec app python scripts/run_ui.py --api-url http://127.0.0.1:5000
+    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app python scripts/run_ui.py --api-url http://127.0.0.1:5000
     ;;
   ui-stop)
     echo "stopping ui dashboard..."
@@ -141,7 +141,7 @@ case "$1" in
     echo "dashboard will be available at http://127.0.0.1:7860"
     echo "requires api server running (use: ./flare api or ./flare api-bg)"
     echo "use './flare ui-stop' to stop the dashboard"
-    docker-compose exec app bash -c "nohup python scripts/run_ui.py --api-url http://127.0.0.1:5000 > /tmp/ui.log 2>&1 &"
+    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app bash -c "nohup python scripts/run_ui.py --api-url http://127.0.0.1:5000 > /tmp/ui.log 2>&1 &"
     sleep 3
     if docker-compose exec app ps aux | grep -q "[r]un_ui.py"; then
       echo "ui dashboard started in background (check logs with: ./flare ui-logs)"
@@ -193,6 +193,24 @@ case "$1" in
     docker system prune -f
     echo "cleanup complete"
     ;;
+  validate)
+    echo "running full system validation..."
+    docker-compose exec app python scripts/validate_system.py
+    ;;
+  validate-model)
+    if [ -z "$2" ]; then
+      echo "error: model path required"
+      echo "usage: ./flare validate-model <model-path>"
+      echo "example: ./flare validate-model /app/models/survival_model.joblib"
+      exit 1
+    fi
+    echo "validating model: $2"
+    docker-compose exec app python scripts/validate_models.py "$2"
+    ;;
+  check-config)
+    echo "checking environment configuration..."
+    docker-compose exec app python scripts/check_config.py
+    ;;
   *)
     echo "flare+ development helper"
     echo ""
@@ -227,13 +245,18 @@ case "$1" in
     echo "  lint       run linters (flake8, black check)"
     echo "  format     format code with black"
     echo ""
+    echo "validation:"
+    echo "  validate             run full system validation"
+    echo "  validate-model PATH  validate specific model file"
+    echo "  check-config         check environment configuration"
+    echo ""
     echo "examples:"
     echo "  ./flare up              # start docker services"
     echo "  ./flare api-bg          # start api server in background"
     echo "  ./flare ui-bg           # start ui dashboard in background"
     echo "  ./flare ingest-api      # trigger ingestion via api"
     echo "  ./flare api-logs        # view api server logs"
+    echo "  ./flare validate        # run system validation"
     echo "  ./flare down            # stop all services"
     ;;
 esac
-
