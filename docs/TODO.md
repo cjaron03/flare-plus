@@ -112,8 +112,27 @@
   - [NOTE] Scenario controls simplified (full implementation requires feature engineering recalculation)
 
 ## Validation & Ops
-- [ ] Backtest against recent solar cycles; compare against NOAA forecasts.
-- [ ] Document deployment plan (schedule retraining cadence, model registry) and publish README.
+- [x] Backtest against recent solar cycles; compare against NOAA forecasts.
+  - [OK] Historical backtesting script (`scripts/backtest_historical.py`)
+  - [OK] Metrics calculation: precision, recall, F1 score, Brier score
+  - [OK] Performance reporting with interpretation guidelines
+  - [OK] CLI command: `./flare backtest` with configurable options
+  - [OK] Makefile target: `make backtest`
+  - [NOTE] NOAA probabilistic forecasts not publicly available in structured format
+  - [NOTE] Can compare to NOAA alert thresholds when available
+- [x] Document deployment plan (schedule retraining cadence, model registry) and publish README.
+  - [OK] Deployment plan documented (`docs/DEPLOYMENT_PLAN.md`) with:
+    - Model retraining schedule (monthly + performance-based triggers)
+    - Model registry strategy (joblib files, MLflow planned for Phase 2)
+    - Pre-deployment validation checklist (system, config, model, backtest)
+    - Step-by-step deployment procedure
+    - Rollback procedures
+    - Model performance monitoring guidelines
+    - Configuration management
+    - Incident response procedures
+  - [OK] README updated with operational deployment section
+  - [OK] Retraining schedule and triggers documented
+  - [OK] Deployment examples and commands provided
 
 ## Infrastructure & Automation
 - [ ] Stand up CI workflow that runs unit tests, linting, and scheduled data/feature drift checks.
@@ -135,13 +154,13 @@
 - [ ] Evaluate solar wind and CME catalogs as auxiliary predictors for time-to-event modeling.
 
 ## UI & Access Control Enhancements
-- [ ] Extend `/health` (or add new endpoint) to return structured guardrail status, last validation timestamp, and ingestion health for UI consumption.
-- [ ] Add lightweight admin authentication (simple login tab in Gradio) that toggles an `is_admin` flag for the dashboard session.
-- [ ] Create an admin-only system health panel showing survival guardrail messages, validation history, and manual retry instructions.
-- [ ] Update visitor-facing views to display only high-level confidence indicators (e.g., “Predictions under review”) without exposing internal warnings.
-- [ ] Document operational workflow for responding to guardrail failures, including when to retrain and how to re-run `./flare validate`.
+-  [OK] Extend `/health` (or add new endpoint) to return structured guardrail status, last validation timestamp, and ingestion health for UI consumption.
+- [OK] Add lightweight admin authentication (simple login tab in Gradio) that toggles an `is_admin` flag for the dashboard session.
+- [OK] Create an admin-only system health panel showing survival guardrail messages, validation history, and manual retry instructions.
+- [OK] Update visitor-facing views to display only high-level confidence indicators (e.g., “Predictions under review”) without exposing internal warnings.
+- [OK] Document operational workflow for responding to guardrail failures, including when to retrain and how to re-run `./flare validate`.
 
-## Future Research Directions
+## Future Research Directions **OPTIONAL**
 - [ ] Investigate hybrid physics-informed ML approaches or transfer learning from NASA datasets.
 - [ ] Prototype transformer-based sequence models for multi-day flare forecasting.
 - [ ] Assess feasibility of probabilistic forecasts beyond 48h (e.g., 7-day outlook) with uncertainty quantification.

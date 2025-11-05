@@ -485,6 +485,64 @@ configure cron for automatic updates:
 0 2 * * * cd /path/to/flare-plus && docker-compose exec -T app python scripts/train_and_predict_survival.py --train --target-class C
 ```
 
+## operational deployment
+
+### pre-deployment checklist
+
+before deploying to production, ensure all validation passes:
+
+```bash
+# full system validation (must pass 6/6 tests)
+./flare validate
+
+# environment configuration check
+./flare check-config
+
+# model validation
+./flare validate-model /app/models/survival_model.joblib
+
+# historical backtesting
+./flare backtest --model models/survival_model_c_class.joblib
+```
+
+### model retraining schedule
+
+**automatic triggers:**
+- time-based: monthly on first day at 02:00 utc
+- performance-based: brier score increases >10%, precision/recall drops below 0.5
+- data-based: major solar event (x-class flare), solar cycle phase change
+
+**manual retraining:**
+```bash
+./flare train-survival --target-class C --save-model
+./flare validate-model /app/models/survival_model_c_class_new.joblib
+./flare backtest --model models/survival_model_c_class_new.joblib
+```
+
+### deployment procedure
+
+1. backup current model
+2. deploy new model to `models/` directory
+3. restart api: `./flare api-stop && ./flare api-bg`
+4. verify: `curl http://127.0.0.1:5001/health`
+5. monitor predictions for 48 hours
+
+### rollback procedure
+
+if new model fails:
+
+```bash
+./flare api-stop
+cp models/archive/YYYYMM/survival_model_c_class_YYYYMMDD.joblib models/survival_model_c_class.joblib
+./flare api-bg
+```
+
+### detailed documentation
+
+- [deployment plan](docs/DEPLOYMENT_PLAN.md) - full operational procedures
+- [phase 2 roadmap](docs/PHASE_2.md) - production hardening plan
+- validation history: query `flare_system_validation_log` table
+
 ## contributing
 
 this is a personal project for learning and experimentation. see `docs/TODO.md` for the roadmap.
