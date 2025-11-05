@@ -2,7 +2,7 @@
 # note: ./flare script is the preferred/default way to run commands
 # this makefile provides make targets that call ./flare for convenience
 
-.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest api api-bg api-stop api-logs ui ui-bg ui-stop ui-logs ingest-api validate validate-model check-config
+.PHONY: help build up down logs shell db-shell test lint format format-check clean init-db ingest api api-bg api-stop api-logs ui ui-bg ui-stop ui-logs ingest-api validate validate-model check-config backtest
 
 help:
 	@echo "flare+ development commands"
@@ -139,6 +139,9 @@ validate-model:
 
 check-config:
 	./flare check-config
+
+backtest:
+	./flare backtest $(BACKTEST_ARGS)
 
 # local development (without docker)
 .PHONY: local-install local-test local-lint local-format

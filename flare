@@ -193,6 +193,11 @@ case "$1" in
     docker system prune -f
     echo "cleanup complete"
     ;;
+  backtest)
+    shift  # remove 'backtest' from args
+    echo "running historical backtest..."
+    docker-compose exec app python scripts/backtest_historical.py "$@"
+    ;;
   validate)
     echo "running full system validation..."
     docker-compose exec app python scripts/validate_system.py
@@ -249,6 +254,7 @@ case "$1" in
     echo "  validate             run full system validation"
     echo "  validate-model PATH  validate specific model file"
     echo "  check-config         check environment configuration"
+    echo "  backtest [OPTIONS]   run historical backtesting (see --help for options)"
     echo ""
     echo "examples:"
     echo "  ./flare up              # start docker services"
