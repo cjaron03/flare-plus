@@ -130,10 +130,12 @@ def train_model(
 
     # train models
     logger.info(f"training models: {models}")
+    run_name = f"classification_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
     pipeline.train_and_evaluate(
         dataset=dataset,
         test_size=0.2,
         models=models,
+        run_name=run_name,
     )
 
     if not pipeline.models:

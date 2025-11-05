@@ -21,6 +21,7 @@ from src.config import CONFIG
 from src.models.survival_labeling import SurvivalLabeler
 from src.models.time_varying_covariates import TimeVaryingCovariateEngineer
 from src.models.survival_models import CoxProportionalHazards, GradientBoostingSurvival
+from src.ml.experiment_tracking import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class SurvivalAnalysisPipeline:
         gb_n_estimators: int = 100,
         gb_learning_rate: float = 0.1,
         random_state: Optional[int] = None,
+        use_mlflow: bool = True,
     ):
         """
         initialize survival analysis pipeline.
@@ -48,6 +50,7 @@ class SurvivalAnalysisPipeline:
             max_time_hours: maximum observation time (censoring window)
             cox_penalizer: l2 penalty for cox model
             gb_n_estimators: number of trees for gradient boosting
+            use_mlflow: whether to use mlflow tracking
             gb_learning_rate: learning rate for gradient boosting
             random_state: random seed
         """
@@ -62,6 +65,8 @@ class SurvivalAnalysisPipeline:
 
         self.target_flare_class = target_flare_class
         self.max_time_hours = max_time_hours
+        self.use_mlflow = use_mlflow
+        self.mlflow_tracker = MLflowTracker() if use_mlflow else None
         self.is_fitted = False
 
     def prepare_dataset(
@@ -116,6 +121,7 @@ class SurvivalAnalysisPipeline:
         dataset: pd.DataFrame,
         test_size: float = 0.2,
         models: Optional[List[str]] = None,
+        run_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         train and evaluate survival models.
@@ -124,12 +130,40 @@ class SurvivalAnalysisPipeline:
             dataset: dataframe with covariates and survival labels
             test_size: fraction of data for testing
             models: list of models to train (["cox", "gb"] or None for both)
+            run_name: optional mlflow run name
 
         returns:
             dict with training results and evaluation metrics
         """
         if models is None:
             models = ["cox", "gb"]
+
+        # start mlflow run if enabled
+        mlflow_run = None
+        if self.use_mlflow and self.mlflow_tracker:
+            run_name_default = (
+                f"survival_{self.target_flare_class}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            )
+            mlflow_run = self.mlflow_tracker.start_run(
+                run_name=run_name or run_name_default,
+                tags={
+                    "model_type": "survival",
+                    "pipeline": "survival",
+                    "target_class": self.target_flare_class,
+                },
+            )
+
+            # log parameters
+            self.mlflow_tracker.log_params({
+                "dataset_size": len(dataset),
+                "test_size": test_size,
+                "target_flare_class": self.target_flare_class,
+                "max_time_hours": self.max_time_hours,
+                "cox_penalizer": self.cox_model.penalizer,
+                "gb_n_estimators": self.gb_model.n_estimators,
+                "gb_learning_rate": self.gb_model.learning_rate,
+                "models": ",".join(models),
+            })
 
         results = {
             "train_size": 0,
@@ -168,6 +202,23 @@ class SurvivalAnalysisPipeline:
 
                 logger.info(f"cox ph c-index: train={cox_c_train:.4f}, test={cox_c_test:.4f}")
 
+                # log to mlflow
+                if self.use_mlflow and self.mlflow_tracker:
+                    try:
+                        self.mlflow_tracker.log_metrics({
+                            "cox_c_index_train": float(cox_c_train),
+                            "cox_c_index_test": float(cox_c_test),
+                        })
+                        # log model (cox models are custom, so we'll save as joblib artifact)
+                        import tempfile
+                        import os
+                        with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as tmp:
+                            joblib.dump(self.cox_model, tmp.name)
+                            self.mlflow_tracker.log_dataset(tmp.name, "cox_model")
+                            os.unlink(tmp.name)
+                    except Exception as e:
+                        logger.warning(f"failed to log cox model to mlflow: {e}")
+
             except Exception as e:
                 logger.error(f"error training cox model: {e}")
                 results["cox_trained"] = False
@@ -188,6 +239,23 @@ class SurvivalAnalysisPipeline:
 
                 logger.info(f"gb survival c-index: train={gb_c_train:.4f}, test={gb_c_test:.4f}")
 
+                # log to mlflow
+                if self.use_mlflow and self.mlflow_tracker:
+                    try:
+                        self.mlflow_tracker.log_metrics({
+                            "gb_c_index_train": float(gb_c_train),
+                            "gb_c_index_test": float(gb_c_test),
+                        })
+                        # log model (gb models are custom, so we'll save as joblib artifact)
+                        import tempfile
+                        import os
+                        with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as tmp:
+                            joblib.dump(self.gb_model, tmp.name)
+                            self.mlflow_tracker.log_dataset(tmp.name, "gb_model")
+                            os.unlink(tmp.name)
+                    except Exception as e:
+                        logger.warning(f"failed to log gb model to mlflow: {e}")
+
             except Exception as e:
                 logger.error(f"error training gb model: {e}")
                 results["gb_trained"] = False
@@ -198,6 +266,13 @@ class SurvivalAnalysisPipeline:
         else:
             logger.error("no models trained successfully - cannot mark pipeline as fitted")
             self.is_fitted = False
+
+        # end mlflow run
+        if self.use_mlflow and self.mlflow_tracker and mlflow_run:
+            try:
+                self.mlflow_tracker.end_run(status="FINISHED")
+            except Exception as e:
+                logger.warning(f"failed to end mlflow run: {e}")
 
         return results
 
@@ -258,20 +333,32 @@ class SurvivalAnalysisPipeline:
             requested_time_points = np.linspace(0, max_time, max(int(max_time) + 1, 169))  # at least hourly
 
             survival_array, time_points = self.cox_model.predict_survival_function(
-                covariates_df,
-                time_points=requested_time_points
+                covariates_df, time_points=requested_time_points
             )
             survival_probs = survival_array[0]  # single sample
 
             # debug logging
-            logger.info(f"cox survival function: min={survival_probs.min():.6f}, max={survival_probs.max():.6f}")
-            logger.info(f"cox time_points: min={time_points.min():.2f}h, max={time_points.max():.2f}h, count={len(time_points)}")
-            logger.info(f"cox survival at key points: 0h={survival_probs[0]:.6f}, 24h={survival_probs[min(24, len(survival_probs)-1)]:.6f}, 168h={survival_probs[-1]:.6f}")
+            logger.info(
+                f"cox survival function: min={survival_probs.min():.6f}, "
+                f"max={survival_probs.max():.6f}"
+            )
+            logger.info(
+                f"cox time_points: min={time_points.min():.2f}h, "
+                f"max={time_points.max():.2f}h, count={len(time_points)}"
+            )
+            survival_24h = survival_probs[min(24, len(survival_probs) - 1)]
+            logger.info(
+                f"cox survival at key points: 0h={survival_probs[0]:.6f}, "
+                f"24h={survival_24h:.6f}, 168h={survival_probs[-1]:.6f}"
+            )
 
             # check if survival is flat
             survival_range = survival_probs.max() - survival_probs.min()
             if survival_range < 0.001:
-                logger.warning(f"cox survival function is nearly flat (range={survival_range:.6f}). probabilities will be near zero.")
+                logger.warning(
+                    f"cox survival function is nearly flat (range={survival_range:.6f}). "
+                    f"probabilities will be near zero."
+                )
         elif model_type == "gb":
             # ensure we only use features that were used during training
             if self.gb_model.is_fitted and self.gb_model.feature_cols_ is not None:
@@ -319,10 +406,15 @@ class SurvivalAnalysisPipeline:
         logger.info(f"total probability across all buckets: {total_prob:.6f}")
 
         if total_prob < 0.001:
+            survival_min = survival_probs.min()
+            survival_max = survival_probs.max()
+            time_min = time_points.min()
+            time_max = time_points.max()
             logger.warning(
                 f"total probability across all buckets is very low ({total_prob:.6f}). "
-                f"survival function may be too flat. survival range: [{survival_probs.min():.6f}, {survival_probs.max():.6f}], "
-                f"time_points range: [{time_points.min():.2f}h, {time_points.max():.2f}h]"
+                f"survival function may be too flat. "
+                f"survival range: [{survival_min:.6f}, {survival_max:.6f}], "
+                f"time_points range: [{time_min:.2f}h, {time_max:.2f}h]"
             )
             # log sample bucket probabilities for debugging
             sample_buckets = list(prob_dist.items())[:3]
@@ -332,10 +424,11 @@ class SurvivalAnalysisPipeline:
             if len(time_buckets) > 0:
                 bucket_indices = [int(t) for t in time_buckets if t <= time_points.max()]
                 if bucket_indices:
-                    logger.info(
-                        f"survival at bucket boundaries: "
-                        f"{[(t, survival_probs[min(int(t), len(survival_probs)-1)]) for t in time_buckets[:4]]}"
-                    )
+                    bucket_data = [
+                        (t, survival_probs[min(int(t), len(survival_probs) - 1)])
+                        for t in time_buckets[:4]
+                    ]
+                    logger.info(f"survival at bucket boundaries: {bucket_data}")
 
         # also compute hazard (risk) score
         # reuse the filtered covariates_df from above

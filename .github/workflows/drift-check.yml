@@ -1,0 +1,205 @@
+name: drift check
+
+on:
+  schedule:
+    # weekly on monday at 2 am utc
+    - cron: '0 2 * * 1'
+  workflow_dispatch:  # allow manual trigger
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  data-drift-check:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flare_prediction_nightly
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: setup python and deps
+        uses: ./.github/actions/setup-python-deps
+        with:
+          python-version: '3.9'
+          install-dev: 'true'
+      
+      - name: initialize database
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: flare_prediction_nightly
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: |
+          python scripts/init_db.py <<< "n"
+      
+      - name: run data drift detection
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: flare_prediction_nightly
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: |
+          python -c "
+          import sys
+          import pandas as pd
+          from datetime import datetime, timedelta
+          from src.data.database import get_database
+          from src.features.pipeline import FeatureEngineer
+          from src.api.monitoring import InputDriftDetector
+          
+          db = get_database()
+          feature_engineer = FeatureEngineer()
+          drift_detector = InputDriftDetector(reference_window_days=30, max_reference_samples=1000)
+          
+          print('=== drift check workflow ===')
+          print(f'started at: {datetime.utcnow().isoformat()}')
+          
+          # compute features for reference window (30-60 days ago)
+          reference_end = datetime.utcnow() - timedelta(days=30)
+          reference_start = reference_end - timedelta(days=30)
+          
+          print(f'reference window: {reference_start.date()} to {reference_end.date()}')
+          
+          # sample timestamps from reference window (every 6 hours)
+          reference_timestamps = []
+          current = reference_start
+          while current <= reference_end:
+              reference_timestamps.append(current)
+              current += timedelta(hours=6)
+          
+          reference_features_list = []
+          for ts in reference_timestamps[:50]:  # limit to 50 samples for speed
+              try:
+                  features_df = feature_engineer.compute_features(ts)
+                  if len(features_df) > 0:
+                      reference_features_list.append(features_df)
+              except Exception as e:
+                  print(f'warning: failed to compute features for {ts}: {e}')
+                  continue
+          
+          if len(reference_features_list) == 0:
+              print('error: no reference features computed')
+              sys.exit(1)
+          
+          reference_features = pd.concat(reference_features_list, ignore_index=True)
+          print(f'computed {len(reference_features)} reference feature samples')
+          
+          # update drift detector reference
+          for _, row in reference_features.iterrows():
+              drift_detector.update_reference(row.to_frame().T, row.get('timestamp', reference_end))
+          
+          print(f'updated reference distribution with {len(reference_features)} samples')
+          
+          # compute features for current window (last 7 days)
+          current_end = datetime.utcnow()
+          current_start = current_end - timedelta(days=7)
+          
+          print(f'current window: {current_start.date()} to {current_end.date()}')
+          
+          current_timestamps = []
+          current_ts = current_start
+          while current_ts <= current_end:
+              current_timestamps.append(current_ts)
+              current_ts += timedelta(hours=6)
+          
+          current_features_list = []
+          for ts in current_timestamps:
+              try:
+                  features_df = feature_engineer.compute_features(ts)
+                  if len(features_df) > 0:
+                      current_features_list.append(features_df)
+              except Exception as e:
+                  print(f'warning: failed to compute features for {ts}: {e}')
+                  continue
+          
+          if len(current_features_list) == 0:
+              print('error: no current features computed')
+              sys.exit(1)
+          
+          current_features = pd.concat(current_features_list, ignore_index=True)
+          print(f'computed {len(current_features)} current feature samples')
+          
+          # run drift detection on recent samples
+          drift_results_list = []
+          for _, row in current_features.tail(10).iterrows():  # test last 10 samples
+              ts = row.get('timestamp', current_end)
+              result = drift_detector.detect_drift(row.to_frame().T, ts, alpha=0.05, method='ks')
+              drift_results_list.append(result)
+          
+          # aggregate results
+          all_drifted_features = set()
+          for result in drift_results_list:
+              all_drifted_features.update(result.get('drifted_features', []))
+          
+          overall_drift = any(r.get('overall_drift', False) for r in drift_results_list)
+          
+          print('\n=== drift detection results ===')
+          print(f'overall drift detected: {overall_drift}')
+          print(f'number of drifted features: {len(all_drifted_features)}')
+          
+          if all_drifted_features:
+              print('drifted features:')
+              for feat in sorted(all_drifted_features):
+                  print(f'  - {feat}')
+          
+          # print detailed test results for drifted features
+          if drift_results_list:
+              latest_result = drift_results_list[-1]
+              print('\nlatest drift test details:')
+              for feat, test_info in latest_result.get('all_tests', {}).items():
+                  if test_info.get('drift_detected', False):
+                      print(f'  {feat}:')
+                      print(f'    statistic: {test_info[\"statistic\"]:.4f}')
+                      print(f'    p-value: {test_info[\"p_value\"]:.6f}')
+          
+          print(f'\ncompleted at: {datetime.utcnow().isoformat()}')
+          
+          # exit with error if significant drift detected
+          if overall_drift and len(all_drifted_features) > 5:
+              print('\nerror: significant drift detected - more than 5 features drifted')
+              sys.exit(1)
+          elif overall_drift:
+              print('\nwarning: drift detected but within acceptable threshold')
+          else:
+              print('\nno significant drift detected')
+          "
+      
+      - name: create issue on critical drift
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'drift check: significant data drift detected',
+              body: `weekly drift check detected significant data drift in features.
+
+            workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+
+            please review the drift detection results and consider:
+            - retraining models if drift is significant
+            - investigating data source changes
+            - updating feature engineering pipeline if needed`,
+              labels: ['drift', 'monitoring']
+            });
+            console.log(`created issue #${issue.data.number}`);
+

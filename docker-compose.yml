@@ -57,9 +57,23 @@ services:
       - ./scripts:/app/scripts
       - app_data:/app/data
       - app_models:/app/models
+      - mlflow_artifacts:/app/mlruns  # mlflow tracking artifacts
     networks:
       - flare-network
     command: tail -f /dev/null
+
+  # optional: mlflow tracking server (commented out for local development)
+  # uncomment to run mlflow ui server alongside the app
+  # mlflow:
+  #   image: ghcr.io/mlflow/mlflow:v2.10.0
+  #   container_name: flare-plus-mlflow
+  #   command: mlflow server --backend-store-uri sqlite:///mlruns.db --default-artifact-root /mlruns --host 0.0.0.0 --port 5000
+  #   ports:
+  #     - "${MLFLOW_PORT:-5002}:5000"
+  #   volumes:
+  #     - mlflow_artifacts:/mlruns
+  #   networks:
+  #     - flare-network
 
 volumes:
   postgres_data:
@@ -67,6 +81,8 @@ volumes:
   app_data:
     driver: local
   app_models:
+    driver: local
+  mlflow_artifacts:
     driver: local
 
 networks:
