@@ -114,10 +114,9 @@ class ModelTrainer:
 
         # train model
         model = LogisticRegression(
-            max_iter=1000,
+            max_iter=2000,
             random_state=self.random_state,
             class_weight=class_weight,
-            multi_class="multinomial",
             solver="lbfgs",
         )
 
@@ -208,9 +207,8 @@ class ModelTrainer:
         # create pipeline with smote
         if model_type == "logistic":
             base_model = LogisticRegression(
-                max_iter=1000,
+                max_iter=2000,
                 random_state=self.random_state,
-                multi_class="multinomial",
                 solver="lbfgs",
             )
         elif model_type == "gradient_boosting":
