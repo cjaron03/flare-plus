@@ -13,7 +13,7 @@ from src.features.pipeline import FeatureEngineer
 from src.models.labeling import FlareLabeler
 from src.models.training import ModelTrainer
 from src.models.evaluation import ModelEvaluator
-from src.utils import tracking as experiment_tracking
+from src.ml.experiment_tracking import MLflowTracker
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class ClassificationPipeline:
         cv_folds: int = 5,
         calibrate: bool = True,
         random_state: int = 42,
+        use_mlflow: bool = True,
     ):
         """
         initialize classification pipeline.
@@ -40,6 +41,7 @@ class ClassificationPipeline:
             cv_folds: number of cross-validation folds
             calibrate: whether to calibrate probabilities
             random_state: random seed
+            use_mlflow: whether to use mlflow tracking
         """
         self.feature_engineer = FeatureEngineer()
         self.labeler = FlareLabeler()
@@ -51,6 +53,8 @@ class ClassificationPipeline:
         self.cv_folds = cv_folds
         self.calibrate = calibrate
         self.random_state = random_state
+        self.use_mlflow = use_mlflow
+        self.mlflow_tracker = MLflowTracker() if use_mlflow else None
         self.models: Dict[str, Any] = {}
         self.evaluation_results: Dict[str, Any] = {}
 
@@ -127,6 +131,7 @@ class ClassificationPipeline:
         models: Optional[List[str]] = None,
         plot_reliability: bool = False,
         reliability_dir: Optional[str] = None,
+        run_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         train and evaluate models on dataset.
@@ -137,12 +142,33 @@ class ClassificationPipeline:
             models: list of model types to train
             plot_reliability: whether to plot reliability diagrams
             reliability_dir: directory to save reliability diagrams
+            run_name: optional mlflow run name
 
         returns:
             dict with training and evaluation results
         """
         if models is None:
             models = ["logistic", "gradient_boosting"]
+
+        # start mlflow run if enabled
+        mlflow_run = None
+        if self.use_mlflow and self.mlflow_tracker:
+            mlflow_run = self.mlflow_tracker.start_run(
+                run_name=run_name or f"classification_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+                tags={"model_type": "classification", "pipeline": "classification"},
+            )
+
+            # log dataset info
+            self.mlflow_tracker.log_params({
+                "dataset_size": len(dataset),
+                "test_size": test_size,
+                "num_features": len([c for c in dataset.columns if not c.startswith("label_")]),
+                "use_smote": self.use_smote,
+                "cv_folds": self.cv_folds,
+                "calibrate": self.calibrate,
+                "random_state": self.random_state,
+                "models": ",".join(models),
+            })
 
         results = {}
 
@@ -296,59 +322,30 @@ class ClassificationPipeline:
                         f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}"
                     )
 
-                    run_name = f"classification_{window}h_{model_type}"
-                    tags = {
-                        "pipeline": "classification",
-                        "window_hours": str(window),
-                        "model_type": model_type,
-                    }
-                    params = {
-                        "window_hours": window,
-                        "model_type": model_type,
-                        "use_smote": self.use_smote,
-                        "cv_folds": self.cv_folds,
-                        "calibrate": self.calibrate,
-                        "random_state": self.random_state,
-                        "train_samples": len(X_train),
-                        "test_samples": len(X_test),
-                        "n_features": len(feature_cols),
-                        "classes": classes,
-                    }
-                    metrics = {
-                        "train_cv_mean": training_info.get("cv_mean"),
-                        "train_cv_std": training_info.get("cv_std"),
-                        "test_accuracy": evaluation_results.get("classification_report", {}).get("accuracy"),
-                        "test_brier_macro": evaluation_results.get("brier_score", {}).get("macro_avg"),
-                        "test_roc_auc_macro": evaluation_results.get("roc_auc", {}).get("macro_avg"),
-                    }
-                    dataset_summary = {
-                        "feature_names": feature_cols,
-                        "class_distribution": class_dist,
-                        "train_size": len(X_train),
-                        "test_size": len(X_test),
-                        "classes": classes,
-                    }
+                    # log to mlflow
+                    if self.use_mlflow and self.mlflow_tracker:
+                        try:
+                            # log metrics
+                            metrics = {
+                                f"{window}h_{model_type}_cv_accuracy": training_info['cv_mean'],
+                                f"{window}h_{model_type}_cv_std": training_info['cv_std'],
+                                f"{window}h_{model_type}_test_accuracy": (
+                                    evaluation_results['classification_report']['accuracy']
+                                ),
+                                f"{window}h_{model_type}_brier_macro": evaluation_results['brier_score']['macro_avg'],
+                                f"{window}h_{model_type}_roc_auc_macro": evaluation_results['roc_auc']['macro_avg'],
+                            }
+                            self.mlflow_tracker.log_metrics(metrics)
 
-                    with experiment_tracking.start_run(run_name=run_name, tags=tags):
-                        experiment_tracking.log_params(params)
-                        experiment_tracking.log_metrics(metrics)
-                        experiment_tracking.log_dict(
-                            training_info,
-                            f"classification/{window}h/{model_type}_training.json",
-                        )
-                        experiment_tracking.log_dict(
-                            evaluation_results,
-                            f"classification/{window}h/{model_type}_evaluation.json",
-                        )
-                        experiment_tracking.log_dict(
-                            dataset_summary,
-                            f"classification/{window}h/{model_type}_dataset.json",
-                        )
-                        experiment_tracking.log_joblib_artifact(
-                            model,
-                            artifact_name="model.joblib",
-                            artifact_path=f"classification/{window}h/{model_type}",
-                        )
+                            # log model
+                            model_artifact_path = f"models/{window}h_{model_type}"
+                            self.mlflow_tracker.log_model(
+                                model,
+                                artifact_path=model_artifact_path,
+                                model_type="sklearn",
+                            )
+                        except Exception as e:
+                            logger.warning(f"failed to log to mlflow: {e}", exc_info=True)
 
                 except Exception as e:
                     logger.error(f"error training/evaluating {model_type}: {e}")
@@ -358,6 +355,13 @@ class ClassificationPipeline:
 
         self.models = results
         self.evaluation_results = results
+
+        # end mlflow run
+        if self.use_mlflow and self.mlflow_tracker and mlflow_run:
+            try:
+                self.mlflow_tracker.end_run(status="FINISHED")
+            except Exception as e:
+                logger.warning(f"failed to end mlflow run: {e}")
 
         return results
 

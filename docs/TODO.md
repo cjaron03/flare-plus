@@ -136,11 +136,22 @@
 
 ## Infrastructure & Automation
 - [x] Stand up CI workflow that runs unit tests, linting, and scheduled data/feature drift checks.
-  - [OK] `validation and drift checks` workflow now runs nightly at 03:30 UTC with summarized results.
+  - [OK] CI workflow exists (`.github/workflows/ci.yml`) with unit tests and linting
+  - [OK] Scheduled drift check workflow (`.github/workflows/drift-check.yml`) runs weekly on Mondays
+  - [OK] Uses existing `InputDriftDetector` for data/feature drift detection
+  - [OK] Creates GitHub issues on critical drift detection
 - [x] Containerize data + model services with reproducible environment specs (Docker/Conda).
-  - [OK] Updated `docker-compose.yml` adds dedicated api/ui/ingestion services with entrypoint scripts.
+  - [OK] Docker setup with multi-stage build (`Dockerfile`)
+  - [OK] Docker Compose configuration (`docker-compose.yml`) for services
+  - [OK] Conda environment specification (`environment.yml`) for alternative deployment
+  - [OK] Reproducible builds with pinned Python version (3.9)
 - [x] Provision experiment tracking (MLflow/W&B) and artifact versioning for datasets + models.
-  - [OK] MLflow integration toggled via `config.yaml` with automatic logging from training pipelines.
+  - [OK] MLflow integration implemented (`src/ml/experiment_tracking.py`)
+  - [OK] Automatic tracking in classification and survival pipelines
+  - [OK] Model registry support for versioning
+  - [OK] Dataset versioning and metadata logging
+  - [OK] MLflow setup script (`scripts/setup_mlflow.py`)
+  - [OK] Documentation (`docs/MLFLOW_SETUP.md`)
 
 ## Interpretability & Communication
 - [ ] Implement SHAP or permutation importance to explain key drivers per prediction.

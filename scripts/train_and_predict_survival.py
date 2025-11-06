@@ -343,10 +343,12 @@ def train_model(
     logger.info(f"event rate: {dataset['event'].mean():.2%}")
 
     # train models
+    run_name = f"survival_{target_flare_class}_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
     results = pipeline.train_and_evaluate(
         dataset,
         test_size=0.2,
         models=model_types,
+        run_name=run_name,
     )
 
     logger.info("training complete:")

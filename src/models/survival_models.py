@@ -29,6 +29,8 @@ class CoxProportionalHazards:
             l1_ratio: l1/l2 ratio (0.0 = pure l2, 1.0 = pure l1)
         """
         self.model = CoxPHFitter(penalizer=penalizer, l1_ratio=l1_ratio)
+        self.penalizer = penalizer
+        self.l1_ratio = l1_ratio
         self.is_fitted = False
         self.feature_cols_: Optional[List[str]] = None  # store feature columns used during training
 
@@ -44,7 +46,11 @@ class CoxProportionalHazards:
         try:
             # prepare dataframe for lifelines
             # lifelines expects duration and event columns, plus feature columns
-            feature_cols = [c for c in df.columns if c not in [duration_col, event_col, "timestamp", "region_number", "event_time"]]
+            feature_cols = [
+                c
+                for c in df.columns
+                if c not in [duration_col, event_col, "timestamp", "region_number", "event_time"]
+            ]
 
             # ensure no NaN values in duration or event
             df_clean = df[[duration_col, event_col] + feature_cols].copy()
@@ -60,7 +66,11 @@ class CoxProportionalHazards:
                     constant_features.append(col)
 
             if constant_features:
-                logger.warning(f"removing {len(constant_features)} constant features: {constant_features[:10]}")
+                logger.warning(
+                    "removing %d constant features: %s",
+                    len(constant_features),
+                    constant_features[:10],
+                )
                 feature_cols = [c for c in feature_cols if c not in constant_features]
                 df_clean = df_clean[[duration_col, event_col] + feature_cols].copy()
 
@@ -104,7 +114,11 @@ class CoxProportionalHazards:
             feature_cols = [c for c in self.feature_cols_ if c in df.columns]
         else:
             # fallback: exclude non-feature columns
-            feature_cols = [c for c in df.columns if c not in ["duration", "event", "timestamp", "region_number", "event_time"]]
+            feature_cols = [
+                c
+                for c in df.columns
+                if c not in ["duration", "event", "timestamp", "region_number", "event_time"]
+            ]
 
         if len(feature_cols) == 0:
             raise ValueError("no feature columns found for prediction")
@@ -120,10 +134,23 @@ class CoxProportionalHazards:
         lifelines_survival = survival_df.values.T  # [n_samples, n_time_points_from_lifelines]
 
         # debug: log what lifelines actually returns
-        logger.debug(f"lifelines returned {len(lifelines_time_points)} time points: min={lifelines_time_points.min():.2f}h, max={lifelines_time_points.max():.2f}h")
-        logger.debug(f"lifelines survival range: min={lifelines_survival.min():.6f}, max={lifelines_survival.max():.6f}")
+        logger.debug(
+            "lifelines returned %d time points: min=%.2fh, max=%.2fh",
+            len(lifelines_time_points),
+            lifelines_time_points.min(),
+            lifelines_time_points.max(),
+        )
+        logger.debug(
+            "lifelines survival range: min=%.6f, max=%.6f",
+            lifelines_survival.min(),
+            lifelines_survival.max(),
+        )
         if len(lifelines_time_points) > 0 and len(lifelines_survival) > 0:
-            logger.debug(f"lifelines survival at boundaries: start={lifelines_survival[0][0]:.6f}, end={lifelines_survival[0][-1]:.6f}")
+            logger.debug(
+                "lifelines survival at boundaries: start=%.6f, end=%.6f",
+                lifelines_survival[0][0],
+                lifelines_survival[0][-1],
+            )
 
         # if specific time_points requested, interpolate to those points
         if time_points is not None:
@@ -173,7 +200,11 @@ class CoxProportionalHazards:
                     f"missing {len(missing)} required features for prediction: {list(missing)[:10]}"
                 )
         else:
-            feature_cols = [c for c in df.columns if c not in ["duration", "event", "timestamp", "region_number", "event_time"]]
+            feature_cols = [
+                c
+                for c in df.columns
+                if c not in ["duration", "event", "timestamp", "region_number", "event_time"]
+            ]
 
         if len(feature_cols) == 0:
             raise ValueError("no feature columns found for prediction")
@@ -200,7 +231,11 @@ class CoxProportionalHazards:
         if self.feature_cols_ is not None:
             feature_cols = [c for c in self.feature_cols_ if c in df.columns]
         else:
-            feature_cols = [c for c in df.columns if c not in ["duration", "event", "timestamp", "region_number", "event_time"]]
+            feature_cols = [
+                c
+                for c in df.columns
+                if c not in ["duration", "event", "timestamp", "region_number", "event_time"]
+            ]
 
         if len(feature_cols) == 0:
             return 0.0
@@ -311,7 +346,11 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
         """
         try:
             # prepare features
-            feature_cols = [c for c in df.columns if c not in [duration_col, event_col, "timestamp", "region_number", "event_time"]]
+            feature_cols = [
+                c
+                for c in df.columns
+                if c not in [duration_col, event_col, "timestamp", "region_number", "event_time"]
+            ]
 
             df_clean = df[[duration_col, event_col] + feature_cols].copy()
             df_clean = df_clean.dropna()
@@ -326,7 +365,11 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
                     constant_features.append(col)
 
             if constant_features:
-                logger.warning(f"removing {len(constant_features)} constant features: {constant_features[:10]}")
+                logger.warning(
+                    "removing %d constant features: %s",
+                    len(constant_features),
+                    constant_features[:10],
+                )
                 feature_cols = [c for c in feature_cols if c not in constant_features]
                 df_clean = df_clean[[duration_col, event_col] + feature_cols].copy()
 
@@ -342,7 +385,11 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
             self.model.fit(X, y)
             self.is_fitted = True
 
-            logger.info(f"gradient boosting survival model fitted with {len(df_clean)} samples and {len(feature_cols)} features")
+            logger.info(
+                "gradient boosting survival model fitted with %d samples and %d features",
+                len(df_clean),
+                len(feature_cols),
+            )
 
         except Exception as e:
             logger.error(f"error fitting gradient boosting survival model: {e}")
@@ -415,7 +462,12 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
 
         return survival_array, time_points
 
-    def compute_concordance_index(self, df: pd.DataFrame, duration_col: str = "duration", event_col: str = "event") -> float:
+    def compute_concordance_index(
+        self,
+        df: pd.DataFrame,
+        duration_col: str = "duration",
+        event_col: str = "event",
+    ) -> float:
         """
         compute concordance index (c-index) on given data.
 
@@ -443,7 +495,11 @@ class GradientBoostingSurvival(BaseEstimator, RegressorMixin):
         hazards = self.predict_hazard(df_clean)
 
         # compute c-index
-        c_index = concordance_index(df_clean[duration_col].values, -hazards, df_clean[event_col].values)
+        c_index = concordance_index(
+            df_clean[duration_col].values,
+            -hazards,
+            df_clean[event_col].values,
+        )
 
         return c_index
 

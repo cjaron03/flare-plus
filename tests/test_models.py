@@ -12,7 +12,7 @@ from src.models.pipeline import ClassificationPipeline
 
 
 def _balanced_labels(n_samples: int):
-    """generate at least three samples per flare class for stratified cv."""
+    """generate labels with at least three samples per class for stratified CV."""
     base = ["None", "C", "M", "X"]
     repeats = (n_samples + len(base) - 1) // len(base)
     return (base * repeats)[:n_samples]

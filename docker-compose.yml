@@ -92,19 +92,32 @@ services:
       - api
     command: ./scripts/docker_run_ui.sh
     ports:
-      - "${UI_HOST_PORT:-7860}:${UI_PORT:-7860}"
-    restart: unless-stopped
+      - "${UI_PORT:-7860}:7860"  # gradio ui dashboard
+      - "${API_PORT:-5001}:5000"  # flask api server (mapped to 5001 to avoid macOS ControlCenter conflict)
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config.yaml:/app/config.yaml
+      - ./scripts:/app/scripts
+      - app_data:/app/data
+      - app_models:/app/models
+      - mlflow_artifacts:/app/mlruns  # mlflow tracking artifacts
+    networks:
+      - flare-network
+    command: tail -f /dev/null
 
-  ingestion:
-    <<: *app-base
-    container_name: flare-plus-ingestion
-    environment:
-      <<: *app-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: ["python", "scripts/run_ingestion_with_retry.py"]
-    restart: "no"
+  # optional: mlflow tracking server (commented out for local development)
+  # uncomment to run mlflow ui server alongside the app
+  # mlflow:
+  #   image: ghcr.io/mlflow/mlflow:v2.10.0
+  #   container_name: flare-plus-mlflow
+  #   command: mlflow server --backend-store-uri sqlite:///mlruns.db --default-artifact-root /mlruns --host 0.0.0.0 --port 5000
+  #   ports:
+  #     - "${MLFLOW_PORT:-5002}:5000"
+  #   volumes:
+  #     - mlflow_artifacts:/mlruns
+  #   networks:
+  #     - flare-network
 
 volumes:
   postgres_data:
@@ -112,6 +125,8 @@ volumes:
   app_data:
     driver: local
   app_models:
+    driver: local
+  mlflow_artifacts:
     driver: local
 
 networks:
