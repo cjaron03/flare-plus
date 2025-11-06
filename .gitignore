@@ -56,3 +56,6 @@ htmlcov/
 # macos
 .DS_Store
 
+# agent files 
+CLAUDE.md
+AGENTS.md
