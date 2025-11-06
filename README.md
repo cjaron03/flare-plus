@@ -65,12 +65,12 @@ cd flare-plus
 ./flare init-db
 ```
 
-3. ingest data:
+3. ingest data (runs dedicated ingestion container with retry logic):
 ```bash
 ./flare ingest
 ```
 
-4. start api server:
+4. start api service:
 ```bash
 ./flare api-bg
 ```
@@ -80,7 +80,7 @@ cd flare-plus
 ./flare ui-bg
 ```
 
-6. access dashboard at http://127.0.0.1:7860
+6. access dashboard at http://127.0.0.1:7860 (api is proxied on http://127.0.0.1:5001 by default)
 
 ### validate system
 
@@ -126,7 +126,7 @@ all commands use the `./flare` wrapper script for consistency.
 ### docker services
 
 ```bash
-./flare up         # start all docker services (postgres, app)
+./flare up         # start core services (postgres + toolbox container)
 ./flare down       # stop all docker services
 ./flare logs       # view logs from all services
 ./flare shell      # open interactive shell in app container
@@ -137,7 +137,7 @@ all commands use the `./flare` wrapper script for consistency.
 ### data ingestion
 
 ```bash
-./flare ingest           # run data ingestion from noaa sources
+./flare ingest           # run dedicated ingestion service (one-off container)
 ./flare ingest-api       # trigger ingestion via api endpoint
 ```
 
@@ -146,14 +146,15 @@ ingestion fetches:
 - current active solar regions
 - magnetogram data from regions
 - automatically detects flare events from flux data
+ - retries transient failures and respects caching windows (default 48h)
 
 ### model serving (api)
 
 ```bash
-./flare api              # start api server (foreground)
-./flare api-bg           # start api server in background
-./flare api-stop         # stop api server
-./flare api-logs         # view api server logs
+./flare api              # start api service (foreground)
+./flare api-bg           # start api service in background
+./flare api-stop         # stop api service
+./flare api-logs         # view api service logs
 ```
 
 api available at http://127.0.0.1:5001
@@ -165,6 +166,8 @@ endpoints:
 - `POST /predict/all` - combined predictions
 - `POST /ingest` - trigger data ingestion
 
+models can be supplied by dropping `*.joblib` artifacts into the `app_models` volume (auto-detected) or by setting `CLASSIFICATION_MODEL_PATH` / `SURVIVAL_MODEL_PATH` before `./flare api-bg`. adjust exposed ports with `API_HOST_PORT` (host, default `5001`) and `API_PORT` (container, default `5000`).
+
 ### ui dashboard
 
 ```bash
@@ -175,6 +178,8 @@ endpoints:
 ```
 
 dashboard available at http://127.0.0.1:7860
+
+set `UI_HOST_PORT` or `UI_PORT` to customize host/container ports, `UI_API_URL` to point the dashboard at a different api endpoint, and `UI_SHARE=true` to request a public gradio share link. the ui container reuses the same model discovery rules as the api.
 
 features:
 - real-time predictions (classification and survival)
@@ -189,6 +194,20 @@ features:
 ./flare lint             # run linters (flake8, black check)
 ./flare format           # format code with black
 ```
+
+### experiment tracking (mlflow)
+
+mlflow logging is disabled by default. enable it in `config.yaml`:
+
+```yaml
+tracking:
+  mlflow:
+    enabled: true
+    tracking_uri: "file:mlruns"
+    experiment_name: "flare-plus"
+```
+
+override `tracking_uri`/`experiment_name` via environment variables if needed (e.g., pointing to an mlflow server). once enabled, `ClassificationPipeline` and `SurvivalAnalysisPipeline` automatically log parameters, metrics, evaluation summaries, and serialized joblib artifacts for each run.
 
 ### makefile shortcuts
 
@@ -259,6 +278,10 @@ VALIDATION SUMMARY
 [OK] All system validation tests passed
 System is ready for deployment
 ```
+
+### automation & scheduled checks
+
+the `validation and drift checks` workflow (`.github/workflows/manual-validation.yml`) runs nightly at **03:30 UTC**, replaying ingestion, drift analysis, and extended integration tests inside GitHub Actions. the workflow publishes a run summary to the job log; trigger it manually from the Actions tab when you need an on-demand validation.
 
 ### model validation
 

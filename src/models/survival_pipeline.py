@@ -185,6 +185,12 @@ class SurvivalAnalysisPipeline:
         results["test_size"] = len(test_df)
 
         logger.info(f"train size: {len(train_df)}, test size: {len(test_df)}")
+        event_rate_train = float(train_df["event"].mean()) if len(train_df) > 0 else 0.0
+        event_rate_test = float(test_df["event"].mean()) if len(test_df) > 0 else 0.0
+        base_tags = {
+            "pipeline": "survival",
+            "target_flare_class": self.target_flare_class,
+        }
 
         # train cox ph model
         if "cox" in models:
@@ -403,7 +409,7 @@ class SurvivalAnalysisPipeline:
 
         # debug: check if all probabilities are zero
         total_prob = sum(prob_dist.values())
-        logger.info(f"total probability across all buckets: {total_prob:.6f}")
+        logger.info("total probability across all buckets: %.6f", total_prob)
 
         if total_prob < 0.001:
             survival_min = survival_probs.min()
@@ -418,7 +424,7 @@ class SurvivalAnalysisPipeline:
             )
             # log sample bucket probabilities for debugging
             sample_buckets = list(prob_dist.items())[:3]
-            logger.info(f"sample bucket probabilities: {sample_buckets}")
+            logger.info("sample bucket probabilities: %s", sample_buckets)
 
             # log actual survival values at bucket boundaries for debugging
             if len(time_buckets) > 0:

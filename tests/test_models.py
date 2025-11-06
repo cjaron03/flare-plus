@@ -200,7 +200,7 @@ def test_train_baseline_models(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     trained_models = trainer.train_baseline_models(sample_features, "label_24h", models=["logistic"])
 
