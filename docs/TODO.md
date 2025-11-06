@@ -135,9 +135,12 @@
   - [OK] Deployment examples and commands provided
 
 ## Infrastructure & Automation
-- [ ] Stand up CI workflow that runs unit tests, linting, and scheduled data/feature drift checks.
-- [ ] Containerize data + model services with reproducible environment specs (Docker/Conda).
-- [ ] Provision experiment tracking (MLflow/W&B) and artifact versioning for datasets + models.
+- [x] Stand up CI workflow that runs unit tests, linting, and scheduled data/feature drift checks.
+  - [OK] `validation and drift checks` workflow now runs nightly at 03:30 UTC with summarized results.
+- [x] Containerize data + model services with reproducible environment specs (Docker/Conda).
+  - [OK] Updated `docker-compose.yml` adds dedicated api/ui/ingestion services with entrypoint scripts.
+- [x] Provision experiment tracking (MLflow/W&B) and artifact versioning for datasets + models.
+  - [OK] MLflow integration toggled via `config.yaml` with automatic logging from training pipelines.
 
 ## Interpretability & Communication
 - [ ] Implement SHAP or permutation importance to explain key drivers per prediction.

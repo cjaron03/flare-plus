@@ -13,6 +13,7 @@ from src.features.pipeline import FeatureEngineer
 from src.models.labeling import FlareLabeler
 from src.models.training import ModelTrainer
 from src.models.evaluation import ModelEvaluator
+from src.utils import tracking as experiment_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +295,60 @@ class ClassificationPipeline:
                     logger.info(
                         f"  macro avg roc-auc: {evaluation_results['roc_auc']['macro_avg']:.4f}"
                     )
+
+                    run_name = f"classification_{window}h_{model_type}"
+                    tags = {
+                        "pipeline": "classification",
+                        "window_hours": str(window),
+                        "model_type": model_type,
+                    }
+                    params = {
+                        "window_hours": window,
+                        "model_type": model_type,
+                        "use_smote": self.use_smote,
+                        "cv_folds": self.cv_folds,
+                        "calibrate": self.calibrate,
+                        "random_state": self.random_state,
+                        "train_samples": len(X_train),
+                        "test_samples": len(X_test),
+                        "n_features": len(feature_cols),
+                        "classes": classes,
+                    }
+                    metrics = {
+                        "train_cv_mean": training_info.get("cv_mean"),
+                        "train_cv_std": training_info.get("cv_std"),
+                        "test_accuracy": evaluation_results.get("classification_report", {}).get("accuracy"),
+                        "test_brier_macro": evaluation_results.get("brier_score", {}).get("macro_avg"),
+                        "test_roc_auc_macro": evaluation_results.get("roc_auc", {}).get("macro_avg"),
+                    }
+                    dataset_summary = {
+                        "feature_names": feature_cols,
+                        "class_distribution": class_dist,
+                        "train_size": len(X_train),
+                        "test_size": len(X_test),
+                        "classes": classes,
+                    }
+
+                    with experiment_tracking.start_run(run_name=run_name, tags=tags):
+                        experiment_tracking.log_params(params)
+                        experiment_tracking.log_metrics(metrics)
+                        experiment_tracking.log_dict(
+                            training_info,
+                            f"classification/{window}h/{model_type}_training.json",
+                        )
+                        experiment_tracking.log_dict(
+                            evaluation_results,
+                            f"classification/{window}h/{model_type}_evaluation.json",
+                        )
+                        experiment_tracking.log_dict(
+                            dataset_summary,
+                            f"classification/{window}h/{model_type}_dataset.json",
+                        )
+                        experiment_tracking.log_joblib_artifact(
+                            model,
+                            artifact_name="model.joblib",
+                            artifact_path=f"classification/{window}h/{model_type}",
+                        )
 
                 except Exception as e:
                     logger.error(f"error training/evaluating {model_type}: {e}")

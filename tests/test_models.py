@@ -11,6 +11,13 @@ from src.models.evaluation import ModelEvaluator
 from src.models.pipeline import ClassificationPipeline
 
 
+def _balanced_labels(n_samples: int):
+    """generate at least three samples per flare class for stratified cv."""
+    base = ["None", "C", "M", "X"]
+    repeats = (n_samples + len(base) - 1) // len(base)
+    return (base * repeats)[:n_samples]
+
+
 @pytest.fixture
 def sample_flare_events(db_session):
     """create sample flare events for testing."""
@@ -56,13 +63,14 @@ def sample_flare_events(db_session):
 @pytest.fixture
 def sample_features():
     """create sample feature dataframe."""
-    timestamps = [datetime(2024, 1, 1, 12, 0, 0) + timedelta(hours=i) for i in range(10)]
+    n_samples = 12
+    timestamps = [datetime(2024, 1, 1, 12, 0, 0) + timedelta(hours=i) for i in range(n_samples)]
     features = {
         "timestamp": timestamps,
-        "flux_short_mean_6h": np.random.rand(10),
-        "flux_long_mean_6h": np.random.rand(10),
-        "region_area": np.random.randint(10, 100, 10),
-        "region_num_sunspots": np.random.randint(1, 20, 10),
+        "flux_short_mean_6h": np.random.rand(n_samples),
+        "flux_long_mean_6h": np.random.rand(n_samples),
+        "region_area": np.random.randint(10, 100, n_samples),
+        "region_num_sunspots": np.random.randint(1, 20, n_samples),
     }
     return pd.DataFrame(features)
 
@@ -144,7 +152,7 @@ def test_prepare_features_and_labels(sample_features):
     trainer = ModelTrainer()
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     X, y, feature_names = trainer.prepare_features_and_labels(sample_features, "label_24h")
 
@@ -158,7 +166,7 @@ def test_train_logistic_regression(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
 
@@ -175,7 +183,7 @@ def test_train_gradient_boosting(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
 
@@ -192,7 +200,7 @@ def test_train_baseline_models(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     trained_models = trainer.train_baseline_models(sample_features, "label_24h", models=["logistic"])
 
@@ -243,18 +251,7 @@ def test_calibrate_probabilities(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels - ensure at least 2 examples per class for 2-fold cv
-    sample_features["label_24h"] = [
-        "None",
-        "None",
-        "C",
-        "C",
-        "M",
-        "M",
-        "X",
-        "X",
-        "None",
-        "C",
-    ]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
 
@@ -273,7 +270,7 @@ def test_evaluate_model(sample_features):
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
 
     # add labels
-    sample_features["label_24h"] = ["None", "C", "M", "X", "None", "C", "M", "X", "None", "C"]
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
 
     X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
 

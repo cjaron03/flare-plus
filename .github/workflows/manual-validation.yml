@@ -1,7 +1,10 @@
-name: manual validation
+name: validation and drift checks
 
 on:
-  workflow_dispatch:  # manual trigger only
+  workflow_dispatch:
+  schedule:
+    # run nightly at 03:30 UTC to align with NOAA daily updates
+    - cron: "30 3 * * *"
 
 concurrency:
   group: ${{ github.workflow }}
@@ -308,3 +311,32 @@ jobs:
           print(f'fetched {len(ar_data)} active region records')
           "
 
+  summary:
+    runs-on: ubuntu-latest
+    needs:
+      - data-ingestion
+      - data-drift-check
+      - extended-integration-tests
+    if: always()
+
+    steps:
+      - name: record workflow summary
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INGESTION_RESULT: ${{ needs['data-ingestion'].result }}
+          DRIFT_RESULT: ${{ needs['data-drift-check'].result }}
+          INTEGRATION_RESULT: ${{ needs['extended-integration-tests'].result }}
+        run: |
+          RUN_TYPE=$([ "${EVENT_NAME}" = "schedule" ] && echo "scheduled" || echo "manual")
+          {
+            echo "## Validation workflow summary"
+            echo ""
+            echo "- Run type: ${RUN_TYPE}"
+            echo "- Generated at: $(date -u '+%Y-%m-%d %H:%M:%SZ')"
+            echo ""
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            echo "| Data ingestion | ${INGESTION_RESULT} |"
+            echo "| Data drift check | ${DRIFT_RESULT} |"
+            echo "| Extended integration tests | ${INTEGRATION_RESULT} |"
+          } >> "$GITHUB_STEP_SUMMARY"
