@@ -45,3 +45,9 @@ survival:
 time_varying_covariates:
   lookback_windows: [1, 3, 6, 12, 24]  # hours
 
+tracking:
+  mlflow:
+    enabled: false
+    tracking_uri: "file:mlruns"
+    experiment_name: "flare-plus"
+    artifact_location: "mlartifacts"

@@ -34,14 +34,27 @@ def run_ingestion_with_retry(max_retries: int = 3, retry_delay: int = 60) -> Tup
             pipeline = DataIngestionPipeline()
             results = pipeline.run_incremental_update()
 
+            def _is_success(entry) -> bool:
+                """treat missing/metadata entries as success unless explicitly marked failure."""
+                if isinstance(entry, dict):
+                    status = entry.get("status")
+                    if status is None:
+                        return True
+                    return status == "success"
+                # allow None, timestamps, or other metadata values
+                return True
+
+            def _is_failure(entry) -> bool:
+                return isinstance(entry, dict) and entry.get("status") == "failure"
+
             # check if ingestion was successful
-            success = all(result.get("status") == "success" for result in results.values())
+            success = all(_is_success(result) for result in results.values())
 
             if success:
                 logger.info("ingestion successful")
                 return True, None
             else:
-                failed = [name for name, result in results.items() if result.get("status") == "failure"]
+                failed = [name for name, result in results.items() if _is_failure(result)]
                 error_msg = f"ingestion failed for: {', '.join(failed)}"
                 logger.warning(error_msg)
 

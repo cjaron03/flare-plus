@@ -7,10 +7,11 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 
 case "$1" in
   up)
-    echo "starting all docker services..."
-    docker-compose up -d
+    echo "starting core docker services (postgres, app)..."
+    docker-compose up -d postgres app
     echo "services started!"
-    echo "postgres: localhost:5432"
+    echo "postgres: localhost:${DB_PORT:-5432}"
+    echo "tip: use './flare ingest' to load data, './flare api-bg' to expose the api, './flare ui-bg' for the dashboard"
     ;;
   down)
     echo "stopping all docker services..."
@@ -40,129 +41,58 @@ case "$1" in
     echo "database initialized"
     ;;
   ingest)
-    echo "running data ingestion from noaa sources..."
-    docker-compose exec app python scripts/run_ingestion.py
+    echo "running data ingestion from noaa sources (one-off container)..."
+    docker-compose run --rm ingestion
     ;;
   api)
-    echo "starting flask api server for model serving..."
-    echo "api will be available at http://127.0.0.1:5001 (mapped from container port 5000)"
-    echo "endpoints: /health, /predict/classification, /predict/survival, /predict/all, /ingest"
-    echo "note: this will run in the foreground. use ctrl+c to stop."
-    echo ""
-    
-    # auto-detect models in /app/models
-    # classification: must contain "classification" and not contain "survival"
-    CLASS_MODEL=$(docker-compose exec -T app sh -c "find /app/models -name '*classification*.joblib' ! -name '*survival*' 2>/dev/null | head -1" | tr -d '\r\n')
-    # survival: must contain "survival" and not contain "classification"
-    SURVIVAL_MODEL=$(docker-compose exec -T app sh -c "find /app/models -name '*survival*.joblib' ! -name '*classification*' 2>/dev/null | head -1" | tr -d '\r\n')
-    
-    if [ -n "$CLASS_MODEL" ]; then
-      echo "found classification model: $CLASS_MODEL"
-      CLASS_ARG="--classification-model $CLASS_MODEL"
-    else
-      echo "no classification model found in /app/models"
-      CLASS_ARG=""
-    fi
-    
-    if [ -n "$SURVIVAL_MODEL" ]; then
-      echo "found survival model: $SURVIVAL_MODEL"
-      SURVIVAL_ARG="--survival-model $SURVIVAL_MODEL"
-    else
-      echo "no survival model found in /app/models"
-      SURVIVAL_ARG=""
-    fi
-    
-    echo ""
-    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG
+    API_HOST_PORT="${API_HOST_PORT:-5001}"
+    echo "starting flask api service (foreground)..."
+    echo "api will be available at http://127.0.0.1:${API_HOST_PORT}"
+    echo "press ctrl+c to stop (or use ./flare api-stop)"
+    docker-compose up api
     ;;
   api-stop)
-    echo "stopping api server..."
-    docker-compose exec app pkill -f "run_api_server.py" || echo "api server not running"
+    echo "stopping api service..."
+    docker-compose stop api >/dev/null || true
     ;;
   api-bg)
-    echo "starting flask api server in background..."
-    echo "api will be available at http://127.0.0.1:5001 (mapped from container port 5000)"
-    echo "endpoints: /health, /predict/classification, /predict/survival, /predict/all, /ingest"
-    echo "use './flare api-stop' to stop the server"
-    
-    # auto-detect models in /app/models
-    # classification: must contain "classification" and not contain "survival"
-    CLASS_MODEL=$(docker-compose exec -T app sh -c "find /app/models -name '*classification*.joblib' ! -name '*survival*' 2>/dev/null | head -1" | tr -d '\r\n')
-    # survival: must contain "survival" and not contain "classification"
-    SURVIVAL_MODEL=$(docker-compose exec -T app sh -c "find /app/models -name '*survival*.joblib' ! -name '*classification*' 2>/dev/null | head -1" | tr -d '\r\n')
-    
-    if [ -n "$CLASS_MODEL" ]; then
-      echo "found classification model: $CLASS_MODEL"
-      CLASS_ARG="--classification-model $CLASS_MODEL"
-    else
-      CLASS_ARG=""
-    fi
-    
-    if [ -n "$SURVIVAL_MODEL" ]; then
-      echo "found survival model: $SURVIVAL_MODEL"
-      SURVIVAL_ARG="--survival-model $SURVIVAL_MODEL"
-    else
-      SURVIVAL_ARG=""
-    fi
-    
-    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app bash -c "nohup python scripts/run_api_server.py $CLASS_ARG $SURVIVAL_ARG > /tmp/api.log 2>&1 &"
-    sleep 3
-    if docker-compose exec app ps aux | grep -q "[r]un_api_server.py"; then
-      echo "api server started in background (check logs with: ./flare api-logs)"
-    else
-      echo "warning: api server may not have started. check logs: ./flare api-logs"
-    fi
+    API_HOST_PORT="${API_HOST_PORT:-5001}"
+    echo "starting flask api service in background..."
+    docker-compose up -d api
+    echo "api running at http://127.0.0.1:${API_HOST_PORT} (container port ${API_PORT:-5000})"
+    echo "use './flare api-stop' to stop the service"
     ;;
   api-logs)
-    echo "viewing api server logs..."
-    if docker-compose exec app test -f /tmp/api.log 2>/dev/null; then
-      docker-compose exec app tail -f /tmp/api.log
-    else
-      echo "no api server logs found. is the api server running?"
-      echo "checking if api server process is running..."
-      docker-compose exec app ps aux | grep "[r]un_api_server.py" || echo "api server process not found"
-    fi
+    echo "streaming api logs (ctrl+c to exit)..."
+    docker-compose logs -f api
     ;;
   ui)
-    echo "starting gradio ui dashboard..."
-    echo "dashboard will be available at http://127.0.0.1:7860"
-    echo "requires api server running (use: ./flare api or ./flare api-bg)"
-    echo "note: api is accessible at http://127.0.0.1:5001 from host (5000 inside container)"
-    echo "note: this will run in the foreground. use ctrl+c to stop."
-    echo ""
-    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app python scripts/run_ui.py --api-url http://127.0.0.1:5000
+    UI_HOST_PORT="${UI_HOST_PORT:-7860}"
+    echo "starting gradio ui dashboard (foreground)..."
+    echo "dashboard will be available at http://127.0.0.1:${UI_HOST_PORT}"
+    echo "press ctrl+c to stop (or use ./flare ui-stop)"
+    docker-compose up ui
     ;;
   ui-stop)
     echo "stopping ui dashboard..."
-    docker-compose exec app pkill -f "run_ui.py" || echo "ui dashboard not running"
+    docker-compose stop ui >/dev/null || true
     ;;
   ui-bg)
+    UI_HOST_PORT="${UI_HOST_PORT:-7860}"
     echo "starting gradio ui dashboard in background..."
-    echo "dashboard will be available at http://127.0.0.1:7860"
-    echo "requires api server running (use: ./flare api or ./flare api-bg)"
-    echo "use './flare ui-stop' to stop the dashboard"
-    docker-compose exec -e ADMIN_RUNTIME_TOKEN="${ADMIN_RUNTIME_TOKEN}" app bash -c "nohup python scripts/run_ui.py --api-url http://127.0.0.1:5000 > /tmp/ui.log 2>&1 &"
-    sleep 3
-    if docker-compose exec app ps aux | grep -q "[r]un_ui.py"; then
-      echo "ui dashboard started in background (check logs with: ./flare ui-logs)"
-    else
-      echo "warning: ui dashboard may not have started. check logs: ./flare ui-logs"
-    fi
+    docker-compose up -d ui
+    echo "dashboard running at http://127.0.0.1:${UI_HOST_PORT}"
+    echo "use './flare ui-stop' to stop the service"
     ;;
   ui-logs)
-    echo "viewing ui dashboard logs..."
-    if docker-compose exec app test -f /tmp/ui.log 2>/dev/null; then
-      docker-compose exec app tail -f /tmp/ui.log
-    else
-      echo "no ui dashboard logs found. is the ui dashboard running?"
-      echo "checking if ui dashboard process is running..."
-      docker-compose exec app ps aux | grep "[r]un_ui.py" || echo "ui dashboard process not found"
-    fi
+    echo "streaming ui logs (ctrl+c to exit)..."
+    docker-compose logs -f ui
     ;;
   ingest-api)
+    API_HOST_PORT="${API_HOST_PORT:-5001}"
     echo "triggering data ingestion via api endpoint..."
-    echo "note: requires api server running (use: ./flare api or ./flare api-bg)"
-    response=$(curl -s -X POST http://127.0.0.1:5001/ingest \
+    echo "note: requires api service running (./flare api-bg)"
+    response=$(curl -s -X POST "http://127.0.0.1:${API_HOST_PORT}/ingest" \
       -H "Content-Type: application/json" \
       -d '{"use_cache": true}')
     if command -v python3 &> /dev/null; then
@@ -222,7 +152,7 @@ case "$1" in
     echo "usage: ./flare <command>"
     echo ""
     echo "docker services:"
-    echo "  up         start all docker services (postgres, app)"
+    echo "  up         start core services (postgres + app toolbox container)"
     echo "  down       stop all docker services"
     echo "  logs       view logs from all services (ctrl+c to exit)"
     echo "  build      build docker images"
@@ -232,18 +162,18 @@ case "$1" in
     echo ""
     echo "database:"
     echo "  init-db    initialize database schema"
-    echo "  ingest     run data ingestion from noaa sources (direct script)"
+    echo "  ingest     run data ingestion (one-off container, retries on failure)"
     echo ""
     echo "services (api & ui):"
-    echo "  api        start flask api server (foreground, http://127.0.0.1:5001)"
-    echo "  api-bg     start flask api server in background"
-    echo "  api-stop   stop api server"
-    echo "  api-logs   view api server logs"
-    echo "  ui         start gradio ui dashboard (foreground, http://127.0.0.1:7860)"
-    echo "  ui-bg      start gradio ui dashboard in background"
+    echo "  api        start flask api service (foreground, default http://127.0.0.1:5001)"
+    echo "  api-bg     start flask api service in background"
+    echo "  api-stop   stop api service"
+    echo "  api-logs   stream api logs"
+    echo "  ui         start gradio ui dashboard (foreground, default http://127.0.0.1:7860)"
+    echo "  ui-bg      start ui dashboard in background"
     echo "  ui-stop    stop ui dashboard"
-    echo "  ui-logs    view ui dashboard logs"
-    echo "  ingest-api trigger data ingestion via api endpoint (requires api running)"
+    echo "  ui-logs    stream ui logs"
+    echo "  ingest-api trigger ingestion via api endpoint (requires api-bg)"
     echo ""
     echo "development:"
     echo "  test       run test suite"
@@ -257,11 +187,12 @@ case "$1" in
     echo "  backtest [OPTIONS]   run historical backtesting (see --help for options)"
     echo ""
     echo "examples:"
-    echo "  ./flare up              # start docker services"
-    echo "  ./flare api-bg          # start api server in background"
+    echo "  ./flare up              # start postgres + toolbox container"
+    echo "  ./flare ingest          # populate database via ingestion service"
+    echo "  ./flare api-bg          # start api service in background"
     echo "  ./flare ui-bg           # start ui dashboard in background"
-    echo "  ./flare ingest-api      # trigger ingestion via api"
-    echo "  ./flare api-logs        # view api server logs"
+    echo "  ./flare ingest-api      # trigger ingestion via running api"
+    echo "  ./flare api-logs        # stream api service logs"
     echo "  ./flare validate        # run system validation"
     echo "  ./flare down            # stop all services"
     ;;

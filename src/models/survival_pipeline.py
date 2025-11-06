@@ -21,6 +21,7 @@ from src.config import CONFIG
 from src.models.survival_labeling import SurvivalLabeler
 from src.models.time_varying_covariates import TimeVaryingCovariateEngineer
 from src.models.survival_models import CoxProportionalHazards, GradientBoostingSurvival
+from src.utils import tracking as experiment_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,12 @@ class SurvivalAnalysisPipeline:
         results["test_size"] = len(test_df)
 
         logger.info(f"train size: {len(train_df)}, test size: {len(test_df)}")
+        event_rate_train = float(train_df["event"].mean()) if len(train_df) > 0 else 0.0
+        event_rate_test = float(test_df["event"].mean()) if len(test_df) > 0 else 0.0
+        base_tags = {
+            "pipeline": "survival",
+            "target_flare_class": self.target_flare_class,
+        }
 
         # train cox ph model
         if "cox" in models:
@@ -167,6 +174,45 @@ class SurvivalAnalysisPipeline:
                 results["cox_c_index_test"] = float(cox_c_test)
 
                 logger.info(f"cox ph c-index: train={cox_c_train:.4f}, test={cox_c_test:.4f}")
+
+                tags = {**base_tags, "model_type": "cox"}
+                params = {
+                    "model_type": "cox",
+                    "target_flare_class": self.target_flare_class,
+                    "max_time_hours": self.max_time_hours,
+                    "train_samples": len(train_df),
+                    "test_samples": len(test_df),
+                    "event_rate_train": event_rate_train,
+                    "event_rate_test": event_rate_test,
+                    "is_fitted": self.cox_model.is_fitted,
+                }
+                metrics = {
+                    "train_c_index": float(cox_c_train),
+                    "test_c_index": float(cox_c_test),
+                }
+                metadata = {
+                    "feature_columns": getattr(self.cox_model, "feature_cols_", None),
+                    "train_size": len(train_df),
+                    "test_size": len(test_df),
+                    "event_rate_train": event_rate_train,
+                    "event_rate_test": event_rate_test,
+                }
+
+                with experiment_tracking.start_run(
+                    run_name=f"survival_cox_{self.target_flare_class}",
+                    tags=tags,
+                ):
+                    experiment_tracking.log_params(params)
+                    experiment_tracking.log_metrics(metrics)
+                    experiment_tracking.log_dict(
+                        metadata,
+                        f"survival/cox/{self.target_flare_class}_metadata.json",
+                    )
+                    experiment_tracking.log_joblib_artifact(
+                        self.cox_model,
+                        artifact_name="model.joblib",
+                        artifact_path=f"survival/cox/{self.target_flare_class}",
+                    )
 
             except Exception as e:
                 logger.error(f"error training cox model: {e}")
@@ -187,6 +233,47 @@ class SurvivalAnalysisPipeline:
                 results["gb_c_index_test"] = float(gb_c_test)
 
                 logger.info(f"gb survival c-index: train={gb_c_train:.4f}, test={gb_c_test:.4f}")
+
+                tags = {**base_tags, "model_type": "gb"}
+                params = {
+                    "model_type": "gradient_boosting",
+                    "target_flare_class": self.target_flare_class,
+                    "max_time_hours": self.max_time_hours,
+                    "n_estimators": self.gb_model.model.get_params().get("n_estimators"),
+                    "learning_rate": self.gb_model.model.get_params().get("learning_rate"),
+                    "train_samples": len(train_df),
+                    "test_samples": len(test_df),
+                    "event_rate_train": event_rate_train,
+                    "event_rate_test": event_rate_test,
+                    "is_fitted": self.gb_model.is_fitted,
+                }
+                metrics = {
+                    "train_c_index": float(gb_c_train),
+                    "test_c_index": float(gb_c_test),
+                }
+                metadata = {
+                    "feature_columns": getattr(self.gb_model, "feature_cols_", None),
+                    "train_size": len(train_df),
+                    "test_size": len(test_df),
+                    "event_rate_train": event_rate_train,
+                    "event_rate_test": event_rate_test,
+                }
+
+                with experiment_tracking.start_run(
+                    run_name=f"survival_gb_{self.target_flare_class}",
+                    tags=tags,
+                ):
+                    experiment_tracking.log_params(params)
+                    experiment_tracking.log_metrics(metrics)
+                    experiment_tracking.log_dict(
+                        metadata,
+                        f"survival/gb/{self.target_flare_class}_metadata.json",
+                    )
+                    experiment_tracking.log_joblib_artifact(
+                        self.gb_model,
+                        artifact_name="model.joblib",
+                        artifact_path=f"survival/gb/{self.target_flare_class}",
+                    )
 
             except Exception as e:
                 logger.error(f"error training gb model: {e}")
@@ -264,14 +351,32 @@ class SurvivalAnalysisPipeline:
             survival_probs = survival_array[0]  # single sample
 
             # debug logging
-            logger.info(f"cox survival function: min={survival_probs.min():.6f}, max={survival_probs.max():.6f}")
-            logger.info(f"cox time_points: min={time_points.min():.2f}h, max={time_points.max():.2f}h, count={len(time_points)}")
-            logger.info(f"cox survival at key points: 0h={survival_probs[0]:.6f}, 24h={survival_probs[min(24, len(survival_probs)-1)]:.6f}, 168h={survival_probs[-1]:.6f}")
+            logger.info(
+                "cox survival function: min=%.6f, max=%.6f",
+                survival_probs.min(),
+                survival_probs.max(),
+            )
+            logger.info(
+                "cox time_points: min=%.2fh, max=%.2fh, count=%d",
+                time_points.min(),
+                time_points.max(),
+                len(time_points),
+            )
+            logger.info(
+                "cox survival at key points: 0h=%.6f, 24h=%.6f, 168h=%.6f",
+                survival_probs[0],
+                survival_probs[min(24, len(survival_probs) - 1)],
+                survival_probs[-1],
+            )
 
             # check if survival is flat
             survival_range = survival_probs.max() - survival_probs.min()
             if survival_range < 0.001:
-                logger.warning(f"cox survival function is nearly flat (range={survival_range:.6f}). probabilities will be near zero.")
+                logger.warning(
+                    "cox survival function is nearly flat (range=%.6f). "
+                    "probabilities will be near zero.",
+                    survival_range,
+                )
         elif model_type == "gb":
             # ensure we only use features that were used during training
             if self.gb_model.is_fitted and self.gb_model.feature_cols_ is not None:
@@ -316,26 +421,32 @@ class SurvivalAnalysisPipeline:
 
         # debug: check if all probabilities are zero
         total_prob = sum(prob_dist.values())
-        logger.info(f"total probability across all buckets: {total_prob:.6f}")
+        logger.info("total probability across all buckets: %.6f", total_prob)
 
         if total_prob < 0.001:
             logger.warning(
-                f"total probability across all buckets is very low ({total_prob:.6f}). "
-                f"survival function may be too flat. survival range: [{survival_probs.min():.6f}, {survival_probs.max():.6f}], "
-                f"time_points range: [{time_points.min():.2f}h, {time_points.max():.2f}h]"
+                "total probability across all buckets is very low (%.6f). "
+                "survival function may be too flat. survival range: [%.6f, %.6f], "
+                "time_points range: [%.2fh, %.2fh]",
+                total_prob,
+                survival_probs.min(),
+                survival_probs.max(),
+                time_points.min(),
+                time_points.max(),
             )
             # log sample bucket probabilities for debugging
             sample_buckets = list(prob_dist.items())[:3]
-            logger.info(f"sample bucket probabilities: {sample_buckets}")
+            logger.info("sample bucket probabilities: %s", sample_buckets)
 
             # log actual survival values at bucket boundaries for debugging
             if len(time_buckets) > 0:
                 bucket_indices = [int(t) for t in time_buckets if t <= time_points.max()]
                 if bucket_indices:
-                    logger.info(
-                        f"survival at bucket boundaries: "
-                        f"{[(t, survival_probs[min(int(t), len(survival_probs)-1)]) for t in time_buckets[:4]]}"
-                    )
+                    boundary_values = [
+                        (t, survival_probs[min(int(t), len(survival_probs) - 1)])
+                        for t in time_buckets[:4]
+                    ]
+                    logger.info("survival at bucket boundaries: %s", boundary_values)
 
         # also compute hazard (risk) score
         # reuse the filtered covariates_df from above

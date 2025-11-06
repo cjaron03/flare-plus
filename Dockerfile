@@ -91,7 +91,7 @@ COPY tests/ ./tests/
 RUN mkdir -p /app/data/cache /app/models && \
     useradd -m -u 1000 flareuser && \
     chown -R flareuser:flareuser /app && \
-    chmod +x scripts/*.py
+    find scripts -type f \( -name "*.py" -o -name "*.sh" \) -exec chmod +x {} \;
 
 USER flareuser
 
