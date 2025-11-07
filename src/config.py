@@ -2,8 +2,9 @@
 
 import logging
 import os
+import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from urllib.parse import quote_plus
 
 import yaml
@@ -105,8 +106,14 @@ class AdminConfig:
     STATUS_MESSAGE = os.getenv("ADMIN_STATUS_MESSAGE", "Admin access enabled.")
     DEV_USERNAME = os.getenv("ADMIN_UI_USERNAME", "plncake")
     DEV_PASSWORD = os.getenv("ADMIN_UI_PASSWORD", "12345")
+    LOGIN_ENABLED = os.getenv("ADMIN_UI_LOGIN_ENABLED", "true").lower() not in {"0", "false", "no"}
+    MAX_LOGIN_ATTEMPTS = int(os.getenv("ADMIN_UI_MAX_ATTEMPTS", "5"))
+    LOGIN_WINDOW_SECONDS = int(os.getenv("ADMIN_UI_ATTEMPT_WINDOW", "60"))
+    LOGIN_LOCKOUT_SECONDS = int(os.getenv("ADMIN_UI_LOCKOUT_SECONDS", "30"))
     _SESSION_MESSAGE = "Admin access enabled (UI session)"
     _session_granted = False
+    _failed_attempts = []
+    _locked_until = 0.0
 
     @classmethod
     def has_access(cls) -> bool:
@@ -145,12 +152,20 @@ class AdminConfig:
         return cls.STATUS_MESSAGE if cls.has_access() else "Admin access disabled."
 
     @classmethod
-    def validate_credentials(cls, username: str, password: str) -> bool:
+    def validate_credentials(cls, username: str, password: str) -> Tuple[bool, str]:
         """validate UI login credentials and grant session access on success."""
+        allowed, message = cls._login_allowed()
+        if not allowed:
+            return False, message
+
         if username == cls.DEV_USERNAME and password == cls.DEV_PASSWORD:
             cls.grant_session_access()
-            return True
-        return False
+            cls._failed_attempts = []
+            cls._locked_until = 0.0
+            return True, "Login successful."
+
+        cls._record_failed_attempt()
+        return False, "Invalid credentials. Please try again."
 
     @classmethod
     def grant_session_access(cls):
@@ -161,3 +176,26 @@ class AdminConfig:
     def revoke_session_access(cls):
         """disable ui-granted admin access."""
         cls._session_granted = False
+        cls._failed_attempts = []
+
+    @classmethod
+    def _login_allowed(cls) -> Tuple[bool, str]:
+        if not cls.LOGIN_ENABLED:
+            return False, "UI login disabled. Set ADMIN_UI_LOGIN_ENABLED=true to enable."
+
+        now = time.time()
+        if now < cls._locked_until:
+            remaining = int(cls._locked_until - now)
+            return False, f"Too many failed attempts. Try again in {remaining}s."
+
+        return True, ""
+
+    @classmethod
+    def _record_failed_attempt(cls):
+        now = time.time()
+        cls._failed_attempts = [ts for ts in cls._failed_attempts if now - ts < cls.LOGIN_WINDOW_SECONDS]
+        cls._failed_attempts.append(now)
+
+        if len(cls._failed_attempts) >= max(1, cls.MAX_LOGIN_ATTEMPTS):
+            cls._locked_until = now + cls.LOGIN_LOCKOUT_SECONDS
+            cls._failed_attempts = []

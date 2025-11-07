@@ -354,6 +354,8 @@ def create_dashboard(
                             admin_components["access_notice"],
                             admin_components["admin_container"],
                             admin_components["guardrail_status"],
+                            admin_components["validation_history"],
+                            admin_components["refresh_fn"],
                         )
 
         # footer

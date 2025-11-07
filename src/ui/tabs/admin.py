@@ -175,4 +175,5 @@ def build_admin_tab(
             guardrail_status.value = guardrail_text
             validation_history.value = rows
 
+    components["refresh_fn"] = refresh_admin_panel
     return components

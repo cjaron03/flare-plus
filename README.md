@@ -181,6 +181,21 @@ dashboard available at http://127.0.0.1:7860
 
 set `UI_HOST_PORT` or `UI_PORT` to customize host/container ports, `UI_API_URL` to point the dashboard at a different api endpoint, and `UI_SHARE=true` to request a public gradio share link. the ui container reuses the same model discovery rules as the api.
 
+#### admin login
+
+use the **Login** tab in the dashboard to unlock admin-only tools during development. default credentials:
+
+- username: `plncake`
+- password: `12345`
+
+toggle or change credentials via environment variables:
+
+- `ADMIN_UI_LOGIN_ENABLED` (default `true`)
+- `ADMIN_UI_USERNAME` / `ADMIN_UI_PASSWORD`
+- `ADMIN_UI_MAX_ATTEMPTS`, `ADMIN_UI_ATTEMPT_WINDOW`, `ADMIN_UI_LOCKOUT_SECONDS`
+
+after a successful login, the admin tab automatically refreshes system health and validation history. failed attempts are rate-limited and show a cooldown message if you hit the threshold.
+
 features:
 - real-time predictions (classification and survival)
 - historical flare event timeline with filters
