@@ -13,6 +13,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libpq-dev \
     curl \
     && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade "pip>=24.3.1" \
     && pip install --no-cache-dir uv
 
 # create virtual environment
@@ -20,7 +21,8 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # ensure pip is up to date before installing dependencies
-RUN pip install --upgrade pip
+# pin to pip 24.3.1+ to fix CVE-2025-8869 and CVE-2023-5752
+RUN pip install --upgrade "pip>=24.3.1"
 
 # copy requirements
 COPY requirements.txt requirements-dev.txt ./
