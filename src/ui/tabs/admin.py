@@ -44,30 +44,48 @@ def _format_guardrail_status(health: dict) -> str:
 def build_admin_tab(
     connection_state: gr.State,
     api_url_state: gr.State,
-) -> None:
+) -> dict:
     """render admin system health tab."""
+    has_access = AdminConfig.has_access()
+
+    components: dict = {}
+
     with gr.Column():
-        if not AdminConfig.has_access():
-            gr.Markdown(AdminConfig.disabled_reason())
-            return
-
-        guardrail_status = gr.Markdown("Loading system health…")
-        validation_history = gr.Dataframe(
-            headers=["Run Time", "Status", "Guardrail", "Reason", "Initiated By"],
-            datatype=["str", "str", "str", "str", "str"],
-            interactive=False,
-            value=[],
-            label="Recent Validation Runs",
+        access_notice = gr.Markdown(
+            "" if has_access else AdminConfig.disabled_reason(),
+            visible=not has_access,
         )
-        validation_output = gr.Textbox(
-            label="Validation Output",
-            lines=10,
-            interactive=False,
-        )
+        components["access_notice"] = access_notice
 
-        with gr.Row():
-            refresh_button = gr.Button("Refresh Status", variant="secondary")
-            run_validation_button = gr.Button("Run System Validation", variant="primary")
+        with gr.Column(visible=has_access) as admin_container:
+            components["admin_container"] = admin_container
+
+            guardrail_status = gr.Markdown(
+                "Loading system health…" if has_access else "",
+                visible=has_access,
+            )
+            validation_history = gr.Dataframe(
+                headers=["Run Time", "Status", "Guardrail", "Reason", "Initiated By"],
+                datatype=["str", "str", "str", "str", "str"],
+                interactive=False,
+                value=[],
+                label="Recent Validation Runs",
+                visible=has_access,
+            )
+            validation_output = gr.Textbox(
+                label="Validation Output",
+                lines=10,
+                interactive=False,
+                visible=has_access,
+            )
+
+            components["guardrail_status"] = guardrail_status
+            components["validation_history"] = validation_history
+            components["validation_output"] = validation_output
+
+            with gr.Row():
+                refresh_button = gr.Button("Refresh Status", variant="secondary")
+                run_validation_button = gr.Button("Run System Validation", variant="primary")
 
         def gather_admin_status():
             """collect guardrail status and validation history."""
@@ -104,6 +122,11 @@ def build_admin_tab(
             return guardrail_text, rows
 
         def refresh_admin_panel():
+            if not AdminConfig.has_access():
+                return (
+                    AdminConfig.disabled_reason(),
+                    [],
+                )
             guardrail_text, rows = gather_admin_status()
             return guardrail_text, rows
 
@@ -147,7 +170,10 @@ def build_admin_tab(
             outputs=[guardrail_status, validation_history, validation_output],
         )
 
-        # populate content on load
-        guardrail_text, rows = gather_admin_status()
-        guardrail_status.value = guardrail_text
-        validation_history.value = rows
+        if has_access:
+            guardrail_text, rows = gather_admin_status()
+            guardrail_status.value = guardrail_text
+            validation_history.value = rows
+
+    components["refresh_fn"] = refresh_admin_panel
+    return components
