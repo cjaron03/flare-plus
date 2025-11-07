@@ -35,7 +35,7 @@ jobs:
       - name: setup python and deps
         uses: ./.github/actions/setup-python-deps
         with:
-          python-version: '3.9'
+          python-version: '3.10'
           install-dev: 'true'
       
       - name: initialize database
@@ -202,4 +202,3 @@ jobs:
               labels: ['drift', 'monitoring']
             });
             console.log(`created issue #${issue.data.number}`);
-
