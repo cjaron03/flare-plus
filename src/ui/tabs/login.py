@@ -62,7 +62,7 @@ def build_login_tab(
                 guardrail_text, rows = _refresh_admin_views()
                 info_text = message or "Login successful. Admin features unlocked for this session."
                 return (
-                    f"✅ {info_text}",
+                    f" {info_text}",
                     indicator_text,
                     gr.update(value="", visible=False),
                     gr.update(visible=True),
@@ -72,7 +72,7 @@ def build_login_tab(
 
             # failure path
             return (
-                f"❌ {message}",
+                f" {message}",
                 indicator_text,
                 gr.update(value=AdminConfig.disabled_reason(), visible=True),
                 gr.update(visible=False),
@@ -83,7 +83,7 @@ def build_login_tab(
         def handle_logout():
             AdminConfig.revoke_session_access()
             return (
-                "ℹ️ Session cleared. Admin features are locked.",
+                "ℹ Session cleared. Admin features are locked.",
                 f"**Admin Access**: {AdminConfig.status_indicator()}",
                 gr.update(value=AdminConfig.disabled_reason(), visible=True),
                 gr.update(visible=False),

@@ -2,7 +2,7 @@
 # optimized with buildkit cache mounts and uv for speed
 
 # ===== BUILDER STAGE =====
-FROM python:3.9-slim AS builder
+FROM python:3.10-slim AS builder
 
 WORKDIR /build
 
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     python -c "import numpy; import pandas; print('numpy/pandas OK')"
 
 # ===== RUNTIME STAGE =====
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # metadata
 ARG BUILD_DATE
