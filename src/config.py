@@ -103,10 +103,21 @@ class AdminConfig:
     ACCESS_TOKEN = os.getenv("ADMIN_ACCESS_TOKEN")
     RUNTIME_TOKEN = os.getenv("ADMIN_RUNTIME_TOKEN")
     STATUS_MESSAGE = os.getenv("ADMIN_STATUS_MESSAGE", "Admin access enabled.")
+    DEV_USERNAME = os.getenv("ADMIN_UI_USERNAME", "plncake")
+    DEV_PASSWORD = os.getenv("ADMIN_UI_PASSWORD", "12345")
+    _SESSION_MESSAGE = "Admin access enabled (UI session)"
+    _session_granted = False
 
     @classmethod
     def has_access(cls) -> bool:
         """return true if admin access is currently granted for this session."""
+        if cls._session_granted:
+            return True
+        return cls._env_tokens_valid()
+
+    @classmethod
+    def _env_tokens_valid(cls) -> bool:
+        """check if environment tokens are present and match."""
         if not cls.ACCESS_TOKEN:
             return False
         if not cls.RUNTIME_TOKEN:
@@ -116,8 +127,10 @@ class AdminConfig:
     @classmethod
     def disabled_reason(cls) -> str:
         """provide reason admin tools are disabled."""
+        if cls.has_access():
+            return ""
         if not cls.ACCESS_TOKEN:
-            return "Admin tools unavailable. Set ADMIN_ACCESS_TOKEN to configure secure access."
+            return "Admin tools locked. Use the Login tab with valid credentials to unlock admin features."
         if not cls.RUNTIME_TOKEN:
             return "Admin tools locked. Launch the dashboard with ADMIN_RUNTIME_TOKEN matching ADMIN_ACCESS_TOKEN."
         if cls.RUNTIME_TOKEN != cls.ACCESS_TOKEN:
@@ -127,4 +140,24 @@ class AdminConfig:
     @classmethod
     def status_indicator(cls) -> str:
         """return human-friendly status indicator text."""
+        if cls._session_granted:
+            return cls._SESSION_MESSAGE
         return cls.STATUS_MESSAGE if cls.has_access() else "Admin access disabled."
+
+    @classmethod
+    def validate_credentials(cls, username: str, password: str) -> bool:
+        """validate UI login credentials and grant session access on success."""
+        if username == cls.DEV_USERNAME and password == cls.DEV_PASSWORD:
+            cls.grant_session_access()
+            return True
+        return False
+
+    @classmethod
+    def grant_session_access(cls):
+        """enable admin access for current session."""
+        cls._session_granted = True
+
+    @classmethod
+    def revoke_session_access(cls):
+        """disable ui-granted admin access."""
+        cls._session_granted = False

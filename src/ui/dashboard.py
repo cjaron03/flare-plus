@@ -21,6 +21,7 @@ from src.ui.tabs.timeline import build_timeline_tab
 from src.ui.tabs.scenario import build_scenario_tab
 from src.ui.tabs.about import build_about_tab
 from src.ui.tabs.admin import build_admin_tab
+from src.ui.tabs.login import build_login_tab
 
 logger = logging.getLogger(__name__)
 
@@ -342,9 +343,17 @@ def create_dashboard(
                         build_about_tab()
 
                     with gr.Tab("Admin"):
-                        build_admin_tab(
+                        admin_components = build_admin_tab(
                             connection_state,
                             api_url_state,
+                        )
+
+                    with gr.Tab("Login"):
+                        build_login_tab(
+                            admin_indicator,
+                            admin_components["access_notice"],
+                            admin_components["admin_container"],
+                            admin_components["guardrail_status"],
                         )
 
         # footer
