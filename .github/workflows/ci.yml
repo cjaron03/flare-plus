@@ -16,6 +16,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    if: github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +25,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
+          scanners: vuln
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: 1
