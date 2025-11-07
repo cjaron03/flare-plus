@@ -33,7 +33,9 @@ runs:
     
     - name: install uv
       shell: bash
-      run: pip install uv
+      run: |
+        python -m pip install --upgrade pip
+        pip install uv
     
     - name: install dependencies
       shell: bash
@@ -43,4 +45,3 @@ runs:
         else
           uv pip install --system -r requirements.txt
         fi
-

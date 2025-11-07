@@ -19,6 +19,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# ensure pip is up to date before installing dependencies
+RUN pip install --upgrade pip
+
 # copy requirements
 COPY requirements.txt requirements-dev.txt ./
 
