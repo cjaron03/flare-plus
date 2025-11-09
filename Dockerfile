@@ -7,11 +7,13 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 
 # update system packages and install uv for faster dependency resolution
+# upgrade system pip to fix cve-2025-8869 (Trivy scans system pip, not just venv)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get upgrade -y -o Dpkg::Options::="--force-confold" && \
     rm -rf /var/lib/apt/lists/* && \
+    python -m pip install --no-cache-dir --upgrade "pip>=25.3" && \
     python -m pip install --no-cache-dir uv
 
 # create virtual environment
