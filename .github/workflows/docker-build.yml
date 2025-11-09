@@ -156,12 +156,12 @@ jobs:
       - name: check for critical vulnerabilities
         run: |
           # parse sarif and fail if critical/high vulns found
-          echo "Analyzing SARIF results..."
-          jq '[.runs[].results[] | select(.level == "error" or .level == "warning")] | .[] | {level, ruleId: .ruleId, message: .message.text}' trivy-results.sarif | head -20
-          
-          CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error" or .level == "warning")] | length' trivy-results.sarif)
+          # trivy uses "error" level for critical/high, "warning" for medium/low
+          CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
           if [ "$CRITICAL_HIGH" -gt 0 ]; then
             echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
+            # show details for debugging
+            jq '.runs[].results[] | select(.level == "error")' trivy-results.sarif
             exit 1
           fi
 
