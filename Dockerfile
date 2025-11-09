@@ -2,18 +2,17 @@
 # optimized with buildkit cache mounts and uv for speed
 
 # ===== BUILDER STAGE =====
-FROM python:3.10-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
-# install build dependencies with cache mount
+# update system packages and install uv for faster dependency resolution
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir uv
+    apt-get update && \
+    apt-get upgrade -y -o Dpkg::Options::="--force-confold" && \
+    rm -rf /var/lib/apt/lists/* && \
+    python -m pip install --no-cache-dir uv
 
 # create virtual environment
 RUN python -m venv /opt/venv
@@ -44,7 +43,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     python -c "import numpy; import pandas; print('numpy/pandas OK')"
 
 # ===== RUNTIME STAGE =====
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # metadata
 ARG BUILD_DATE
@@ -62,14 +61,16 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 
 WORKDIR /app
 
-# install runtime dependencies with cache mount
-# update libsqlite3-0 to fix cve-2025-7709 (if available in repo)
+# create non-root user first for proper ownership
+RUN useradd -m -u 1000 flareuser
+
+# install runtime libraries and apply security updates
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    && apt-get install -y --only-upgrade libsqlite3-0 2>/dev/null || true \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get update && \
+    apt-get upgrade -y -o Dpkg::Options::="--force-confold" && \
+    apt-get install -y --no-install-recommends libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
 
 # copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -78,31 +79,23 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH="/app" \
     VIRTUAL_ENV="/opt/venv" \
-    PYTHONUNBUFFERED="1"
+    PYTHONUNBUFFERED="1" \
+    PYTHONDONTWRITEBYTECODE="1"
 
-# copy application code
-COPY src/ ./src/
-COPY scripts/ ./scripts/
-COPY pyproject.toml ./
+# copy application code with proper ownership
+COPY --chown=flareuser:flareuser src/ ./src/
+COPY --chown=flareuser:flareuser scripts/ ./scripts/
+COPY --chown=flareuser:flareuser pyproject.toml ./
 # copy config.yaml if it exists (optional - code has defaults via load_config)
 # note: docker-compose mounts this as volume, but for standalone builds it should exist
-COPY config.yaml* ./
+COPY --chown=flareuser:flareuser config.yaml* ./
 
-# copy tests directory (for local dev/testing)
-ARG INSTALL_DEV=true
-COPY tests/ ./tests/
-
-# create data directories, non-root user, and set permissions in one layer
+# create data directories, fix venv ownership, and set permissions
 RUN mkdir -p /app/data/cache /app/models && \
-    useradd -m -u 1000 flareuser && \
-    chown -R flareuser:flareuser /app && \
+    chown -R flareuser:flareuser /app /opt/venv && \
     find scripts -type f \( -name "*.py" -o -name "*.sh" \) -exec chmod +x {} \;
 
 USER flareuser
 
-# health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)"
-
-# default command
-CMD ["python", "-m", "src"]
+# default command (serve API)
+CMD ["python", "scripts/run_api_server.py", "--host", "0.0.0.0", "--port", "5000", "--workers", "2"]

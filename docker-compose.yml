@@ -10,6 +10,7 @@ x-app-env: &app-env
   ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
   ADMIN_RUNTIME_TOKEN: ${ADMIN_RUNTIME_TOKEN:-}
   PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
 
 x-app-volumes: &app-volumes
   - ./src:/app/src

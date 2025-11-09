@@ -50,6 +50,12 @@ data/
 models/
 notebooks/
 
+# documentation and development files
+README.md
+Makefile
+docs/
+tests/
+
 # docker
 docker-compose.yml
 Dockerfile
