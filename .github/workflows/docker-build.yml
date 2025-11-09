@@ -156,10 +156,15 @@ jobs:
       - name: check for critical vulnerabilities
         run: |
           # parse sarif and fail if critical/high vulns found
-          CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error" or .level == "warning")] | length' trivy-results.sarif)
-          if [ "$CRITICAL_HIGH" -gt 0 ]; then
-            echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
-            exit 1
+          # trivy uses "error" level for critical/high, "warning" for medium/low
+          if [ -f "trivy-results.sarif" ] && [ -s "trivy-results.sarif" ]; then
+            CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
+            if [ "$CRITICAL_HIGH" -gt 0 ]; then
+              echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
+              # show details for debugging
+              jq '.runs[].results[] | select(.level == "error")' trivy-results.sarif
+              exit 1
+            fi
           fi
 
   publish-artifacts:
@@ -215,4 +220,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

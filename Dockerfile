@@ -19,6 +19,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# upgrade pip in venv to fix cve-2023-5752 and cve-2025-8869
+RUN /opt/venv/bin/pip install --no-cache-dir --upgrade "pip>=25.3"
+
 # copy requirements
 COPY requirements.txt requirements-dev.txt ./
 
@@ -60,10 +63,12 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
 WORKDIR /app
 
 # install runtime dependencies with cache mount
+# update libsqlite3-0 to fix cve-2025-7709 (if available in repo)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    && apt-get install -y --only-upgrade libsqlite3-0 2>/dev/null || true \
     && rm -rf /var/lib/apt/lists/*
 
 # copy virtual environment from builder
