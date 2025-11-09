@@ -18,7 +18,70 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  pr-image-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: set up docker buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: build image for pull request
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: pr-image:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            INSTALL_DEV=false
+      
+      - name: smoke test image
+        run: |
+          docker run --rm pr-image:${{ github.sha }} python - <<'PY'
+          import importlib
+          modules = ["numpy", "scipy", "sklearn", "lightgbm", "src"]
+          for module in modules:
+              importlib.import_module(module)
+          print("image import check passed:", ", ".join(modules))
+          PY
+      
+      - name: scan image for vulnerabilities (sarif)
+        uses: aquasecurity/trivy-action@0.34.0
+        continue-on-error: true
+        with:
+          image-ref: pr-image:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          scanners: 'vuln'
+          skip-files: '**/*.map,**/*.min.js'
+          timeout: '10m'
+          exit-code: 0
+      
+      - name: upload trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: check for critical/high vulnerabilities
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: pr-image:${{ github.sha }}
+          format: 'table'
+          scanners: 'vuln'
+          severity: 'CRITICAL,HIGH'
+          exit-code: 1
+          timeout: '10m'
+
   build-and-push:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -53,7 +116,7 @@ jobs:
       
       - name: build and push docker image
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -61,40 +124,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
             VERSION=${{ steps.meta.outputs.version }}
-      
-      - name: generate artifact attestation
-        if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+            INSTALL_DEV=false
 
   test-image:
     runs-on: ubuntu-latest
     needs: build-and-push
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read
       security-events: write
-    
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: flare_prediction_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
     
     steps:
       - uses: actions/checkout@v4
@@ -107,17 +151,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: build image locally for pr
-        if: github.event_name == 'pull_request'
-        run: |
-          docker build -t test-image:pr .
-      
       - name: pull and test image
-        if: github.event_name != 'pull_request'
         run: |
           docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           
-          # test that the image starts without errors
+          # test that the image starts without errors and required libs are present
           docker run --rm \
             -e DB_HOST=host.docker.internal \
             -e DB_PORT=5432 \
@@ -125,19 +163,20 @@ jobs:
             -e DB_USER=postgres \
             -e DB_PASSWORD=postgres \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            python -c "import src; print('image validation successful')"
+            python - <<'PY'
+          import importlib
+          modules = ["numpy", "scipy", "sklearn", "lightgbm", "src"]
+          for module in modules:
+              importlib.import_module(module)
+          print("image import check passed:", ", ".join(modules))
+          PY
       
       - name: set image reference
         id: image
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "ref=test-image:pr" >> $GITHUB_OUTPUT
-          else
-            echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
-          fi
+        run: echo "ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
       
-      - name: scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.33.1
+      - name: scan image for vulnerabilities (sarif)
+        uses: aquasecurity/trivy-action@0.34.0
         continue-on-error: true
         with:
           image-ref: ${{ steps.image.outputs.ref }}
@@ -146,6 +185,7 @@ jobs:
           scanners: 'vuln'
           skip-files: '**/*.map,**/*.min.js'
           timeout: '10m'
+          exit-code: 0
       
       - name: upload trivy results
         uses: github/codeql-action/upload-sarif@v3
@@ -153,32 +193,29 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
       
-      - name: check for critical vulnerabilities
-        run: |
-          # parse sarif and fail if critical/high vulns found
-          # trivy uses "error" level for critical/high, "warning" for medium/low
-          if [ -f "trivy-results.sarif" ] && [ -s "trivy-results.sarif" ]; then
-            CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
-            if [ "$CRITICAL_HIGH" -gt 0 ]; then
-              echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
-              # show details for debugging
-              jq '.runs[].results[] | select(.level == "error")' trivy-results.sarif
-              exit 1
-            fi
-          fi
+      - name: check for critical/high vulnerabilities
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: 'table'
+          scanners: 'vuln'
+          severity: 'CRITICAL,HIGH'
+          exit-code: 1
+          timeout: '10m'
 
   publish-artifacts:
     runs-on: ubuntu-latest
     needs: test-image
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
     
     steps:
       - uses: actions/checkout@v4
       
       - name: set up python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
+          cache: 'pip'
       
       - name: install dependencies
         run: |
@@ -201,7 +238,7 @@ jobs:
           tar -czf artifacts/scripts-${{ github.ref_name }}.tar.gz scripts/
       
       - name: create github release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           body: |

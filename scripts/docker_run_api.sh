@@ -1,6 +1,6 @@
 #!/bin/sh
 # entrypoint for running the API server inside docker-compose
-set -euo pipefail
+set -eu
 
 HOST="${API_HOST:-0.0.0.0}"
 PORT="${API_PORT:-5000}"

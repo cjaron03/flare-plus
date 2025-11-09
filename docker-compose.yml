@@ -10,12 +10,13 @@ x-app-env: &app-env
   ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
   ADMIN_RUNTIME_TOKEN: ${ADMIN_RUNTIME_TOKEN:-}
   PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
 
 x-app-volumes: &app-volumes
-  - ./src:/app/src
-  - ./tests:/app/tests
-  - ./config.yaml:/app/config.yaml
-  - ./scripts:/app/scripts
+  - ./src:/app/src:cached
+  - ./tests:/app/tests:cached
+  - ./config.yaml:/app/config.yaml:cached
+  - ./scripts:/app/scripts:cached
   - app_data:/app/data
   - app_models:/app/models
 

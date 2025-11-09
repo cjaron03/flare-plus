@@ -41,7 +41,7 @@ jobs:
       - name: setup python and deps
         uses: ./.github/actions/setup-python-deps
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           install-dev: 'false'
       
       - name: check for syntax errors
@@ -56,7 +56,7 @@ jobs:
       - name: setup python and deps
         uses: ./.github/actions/setup-python-deps
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           install-dev: 'true'
       
       - name: check for known security vulnerabilities
