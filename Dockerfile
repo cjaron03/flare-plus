@@ -67,12 +67,14 @@ WORKDIR /app
 RUN useradd -m -u 1000 flareuser
 
 # install runtime libraries and apply security updates
+# upgrade system pip to fix cve-2025-8869 (Trivy scans system pip in runtime stage)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     apt-get upgrade -y -o Dpkg::Options::="--force-confold" && \
     apt-get install -y --no-install-recommends libgomp1 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    python -m pip install --no-cache-dir --upgrade "pip>=25.3"
 
 # copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
