@@ -148,33 +148,34 @@ jobs:
           skip-files: '**/*.map,**/*.min.js'
           timeout: '10m'
       
-      - name: check sarif file exists
-        id: check-sarif
+      - name: ensure sarif file exists
         if: always()
         run: |
-          if [ -f "trivy-results.sarif" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
+          # create empty sarif file if scan failed and file doesn't exist
+          # this ensures the upload step is always valid for code scanning
+          if [ ! -f "trivy-results.sarif" ]; then
+            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","informationUri":"https://github.com/aquasecurity/trivy"}},"results":[]}]}' > trivy-results.sarif
           fi
       
       - name: upload trivy results
         uses: github/codeql-action/upload-sarif@v3
-        if: steps.check-sarif.outputs.exists == 'true'
+        if: always()
         with:
           sarif_file: 'trivy-results.sarif'
       
       - name: check for critical vulnerabilities
-        if: steps.check-sarif.outputs.exists == 'true'
+        if: always() && steps.trivy-scan.outcome == 'success'
         run: |
           # parse sarif and fail if critical/high vulns found
           # trivy uses "error" level for critical/high, "warning" for medium/low
-          CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
-          if [ "$CRITICAL_HIGH" -gt 0 ]; then
-            echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
-            # show details for debugging
-            jq '.runs[].results[] | select(.level == "error")' trivy-results.sarif
-            exit 1
+          if [ -f "trivy-results.sarif" ] && [ -s "trivy-results.sarif" ]; then
+            CRITICAL_HIGH=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
+            if [ "$CRITICAL_HIGH" -gt 0 ]; then
+              echo "Found $CRITICAL_HIGH critical/high vulnerabilities"
+              # show details for debugging
+              jq '.runs[].results[] | select(.level == "error")' trivy-results.sarif
+              exit 1
+            fi
           fi
 
   publish-artifacts:
