@@ -61,6 +61,7 @@ jobs:
           output: 'trivy-results.sarif'
           scanners: 'vuln'
           skip-files: '**/*.map,**/*.min.js'
+          ignore-unfixed: true
           timeout: '10m'
           exit-code: 0
       
@@ -184,6 +185,7 @@ jobs:
           output: 'trivy-results.sarif'
           scanners: 'vuln'
           skip-files: '**/*.map,**/*.min.js'
+          ignore-unfixed: true
           timeout: '10m'
           exit-code: 0
       
