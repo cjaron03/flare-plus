@@ -13,10 +13,10 @@ x-app-env: &app-env
   PYTHONDONTWRITEBYTECODE: 1
 
 x-app-volumes: &app-volumes
-  - ./src:/app/src:cached
-  - ./tests:/app/tests:cached
-  - ./config.yaml:/app/config.yaml:cached
-  - ./scripts:/app/scripts:cached
+  - ./src:/app/src
+  - ./tests:/app/tests
+  - ./config.yaml:/app/config.yaml
+  - ./scripts:/app/scripts
   - app_data:/app/data
   - app_models:/app/models
 
