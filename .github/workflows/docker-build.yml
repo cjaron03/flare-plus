@@ -137,7 +137,6 @@ jobs:
           fi
       
       - name: scan image for vulnerabilities
-        id: trivy-scan
         uses: aquasecurity/trivy-action@0.33.1
         continue-on-error: true
         with:
@@ -148,15 +147,6 @@ jobs:
           skip-files: '**/*.map,**/*.min.js'
           timeout: '10m'
       
-      - name: ensure sarif file exists
-        if: always()
-        run: |
-          # create empty sarif file if scan failed and file doesn't exist
-          # this ensures the upload step is always valid for code scanning
-          if [ ! -f "trivy-results.sarif" ]; then
-            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","informationUri":"https://github.com/aquasecurity/trivy"}},"results":[]}]}' > trivy-results.sarif
-          fi
-      
       - name: upload trivy results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -164,7 +154,6 @@ jobs:
           sarif_file: 'trivy-results.sarif'
       
       - name: check for critical vulnerabilities
-        if: always() && steps.trivy-scan.outcome == 'success'
         run: |
           # parse sarif and fail if critical/high vulns found
           # trivy uses "error" level for critical/high, "warning" for medium/low
