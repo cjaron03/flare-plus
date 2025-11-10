@@ -116,6 +116,9 @@ class UIState:
         classification_model_path: Optional[str],
         survival_model_path: Optional[str],
     ):
+        self._api_url = api_url
+        self._classification_model_path = classification_model_path
+        self._survival_model_path = survival_model_path
         (
             self.connection_mode,
             self.api_url,
@@ -124,6 +127,16 @@ class UIState:
 
         self._refresh_lock = Lock()
         self._last_refresh: Optional[datetime] = None
+
+    def refresh_connection(self):
+        """re-check api connection and update connection mode."""
+        (
+            self.connection_mode,
+            self.api_url,
+            self.pipelines,
+        ) = get_prediction_service(
+            self._api_url, self._classification_model_path, self._survival_model_path
+        )
 
     def snapshot(self) -> ConnectionSnapshot:
         """Return a serializable snapshot used by multiple endpoints."""
@@ -333,6 +346,8 @@ def create_app(
 
     @app.get("/ui/api/status")
     def get_status() -> Dict[str, Any]:
+        # refresh connection state to detect if api became available
+        state.refresh_connection()
         snapshot = asdict(state.snapshot())
         data_freshness = _serialize_data_freshness()
         return {
@@ -365,6 +380,8 @@ def create_app(
                 "dataFreshness": _serialize_data_freshness(),
             }
 
+        # re-check api connection before rejecting (api may have become available since startup)
+        state.refresh_connection()
         if state.connection_mode != "api" or not state.api_url:
             return {
                 "success": False,

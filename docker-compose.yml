@@ -103,6 +103,24 @@ services:
       - app_models:/app/models
       - ./ui-frontend/dist:/app/ui-frontend/dist:ro
 
+  # vite dev server for hot reloading during development
+  ui-dev:
+    image: node:20-slim
+    container_name: flare-plus-ui-dev
+    working_dir: /app/ui-frontend
+    environment:
+      UI_API_TARGET: ${UI_API_TARGET:-http://ui:7860}
+      VITE_UI_API_URL: ${VITE_UI_API_URL:-/ui/api}
+    depends_on:
+      - ui
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "${VITE_DEV_PORT:-5173}:5173"
+    volumes:
+      - ./ui-frontend:/app/ui-frontend
+    networks:
+      - flare-network
+
   # one-off ingestion runner (used by ./flare ingest)
   ingestion:
     <<: *app-base
