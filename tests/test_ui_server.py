@@ -47,14 +47,14 @@ def test_throttle_message_no_last_refresh():
 
 def test_throttle_message_recent_refresh():
     """test throttle message when refresh was recent."""
-    recent_time = datetime.now()
+    recent_time = datetime.utcnow()
     message = _throttle_message(recent_time, min_minutes=5)
     assert "throttled" in message.lower() or "wait" in message.lower()
 
 
 def test_throttle_message_old_refresh():
     """test throttle message when refresh was old enough."""
-    old_time = datetime.now().replace(year=2020)
+    old_time = datetime.utcnow().replace(year=2020)
     assert _throttle_message(old_time, min_minutes=5) == ""
 
 
@@ -64,11 +64,11 @@ def test_throttle_message_old_refresh():
 def test_status_endpoint(mock_status, mock_freshness, mock_timestamps, client):
     """test status endpoint."""
     mock_timestamps.return_value = {
-        "flux_latest": datetime.now(),
+        "flux_latest": datetime.utcnow(),
         "flux_count": 100,
-        "regions_latest": datetime.now(),
+        "regions_latest": datetime.utcnow(),
         "regions_count": 50,
-        "flares_latest": datetime.now(),
+        "flares_latest": datetime.utcnow(),
         "flares_count": 25,
     }
     mock_freshness.return_value = {"hours_ago": 1, "status": "fresh", "color": "green"}
