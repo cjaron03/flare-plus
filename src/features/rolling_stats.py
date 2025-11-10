@@ -52,7 +52,7 @@ def compute_rolling_statistics(
     features: Dict[str, Any] = {}
 
     timestamp = _normalize_timestamp(timestamp)
-    
+
     for window_hours in windows_hours:
         # filter data within window
         window_start = timestamp - timedelta(hours=window_hours)

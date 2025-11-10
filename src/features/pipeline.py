@@ -98,7 +98,10 @@ class FeatureEngineer:
                 )
                 # ensure timestamp column is timezone-naive
                 if len(data["flux"]) > 0 and "timestamp" in data["flux"].columns:
-                    if hasattr(data["flux"]["timestamp"].dtype, 'tz') and data["flux"]["timestamp"].dtype.tz is not None:
+                    if (
+                        hasattr(data["flux"]["timestamp"].dtype, "tz")
+                        and data["flux"]["timestamp"].dtype.tz is not None
+                    ):
                         data["flux"]["timestamp"] = data["flux"]["timestamp"].dt.tz_localize(None)
                     else:
                         # normalize individual values if needed
@@ -205,7 +208,7 @@ class FeatureEngineer:
         """
         # normalize timestamp to timezone-naive UTC for pandas compatibility
         timestamp = _normalize_timestamp(timestamp)
-        
+
         # load data (or use preloaded)
         if preloaded_data is not None:
             # filter preloaded data to the relevant time window for this timestamp
@@ -324,7 +327,7 @@ class FeatureEngineer:
         for col in features_df.columns:
             if col != "timestamp":  # skip timestamp column
                 try:
-                    features_df[col] = pd.to_numeric(features_df[col], errors='ignore')
+                    features_df[col] = pd.to_numeric(features_df[col], errors="ignore")
                 except Exception:
                     pass  # keep original if conversion fails
 

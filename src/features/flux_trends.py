@@ -1,7 +1,7 @@
 """flux trend features from goes x-ray flux data."""
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -52,16 +52,20 @@ def compute_flux_trends(
 
     # normalize timestamp to timezone-naive UTC for pandas compatibility
     timestamp = _normalize_timestamp(timestamp)
-    
+
     # ensure flux_data timestamp column is timezone-naive
     if flux_data is not None and len(flux_data) > 0 and "timestamp" in flux_data.columns:
-        if hasattr(flux_data["timestamp"].dtype, 'tz') and flux_data["timestamp"].dtype.tz is not None:
+        if hasattr(flux_data["timestamp"].dtype, "tz") and flux_data["timestamp"].dtype.tz is not None:
             flux_data = flux_data.copy()
             flux_data["timestamp"] = flux_data["timestamp"].dt.tz_localize(None)
-        elif len(flux_data) > 0 and isinstance(flux_data["timestamp"].iloc[0], datetime) and flux_data["timestamp"].iloc[0].tzinfo is not None:
+        elif (
+            len(flux_data) > 0
+            and isinstance(flux_data["timestamp"].iloc[0], datetime)
+            and flux_data["timestamp"].iloc[0].tzinfo is not None
+        ):
             flux_data = flux_data.copy()
             flux_data["timestamp"] = flux_data["timestamp"].apply(_normalize_timestamp)
-    
+
     # filter data within lookback window
     cutoff_time = timestamp - timedelta(hours=lookback_hours)
     recent_data = flux_data[flux_data["timestamp"] >= cutoff_time].copy()
@@ -168,16 +172,20 @@ def compute_flux_rate_of_change(
 
     # normalize timestamp to timezone-naive UTC for pandas compatibility
     timestamp = _normalize_timestamp(timestamp)
-    
+
     # ensure flux_data timestamp column is timezone-naive
     if flux_data is not None and len(flux_data) > 0 and "timestamp" in flux_data.columns:
-        if hasattr(flux_data["timestamp"].dtype, 'tz') and flux_data["timestamp"].dtype.tz is not None:
+        if hasattr(flux_data["timestamp"].dtype, "tz") and flux_data["timestamp"].dtype.tz is not None:
             flux_data = flux_data.copy()
             flux_data["timestamp"] = flux_data["timestamp"].dt.tz_localize(None)
-        elif len(flux_data) > 0 and isinstance(flux_data["timestamp"].iloc[0], datetime) and flux_data["timestamp"].iloc[0].tzinfo is not None:
+        elif (
+            len(flux_data) > 0
+            and isinstance(flux_data["timestamp"].iloc[0], datetime)
+            and flux_data["timestamp"].iloc[0].tzinfo is not None
+        ):
             flux_data = flux_data.copy()
             flux_data["timestamp"] = flux_data["timestamp"].apply(_normalize_timestamp)
-    
+
     # filter data within lookback window
     cutoff_time = timestamp - timedelta(hours=lookback_hours)
     recent_data = flux_data[flux_data["timestamp"] >= cutoff_time].copy()

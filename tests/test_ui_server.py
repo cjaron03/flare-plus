@@ -155,4 +155,3 @@ def test_create_app_without_static_dir():
         mock_service.return_value = ("api", "http://localhost:5000", None)
         app = create_app("http://localhost:5000")
         assert app is not None
-

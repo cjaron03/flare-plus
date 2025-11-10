@@ -26,11 +26,11 @@ def trigger_validation_via_api(api_url: str, initiated_by: str) -> Tuple[bool, D
             json={"initiated_by": initiated_by},
             timeout=900,
         )
-        
+
         # get response data regardless of status code
         data = response.json() if response.content else {}
         returncode = data.get("returncode", 0)
-        
+
         # validation script returns non-zero on failure, but we still want to show the output
         if response.status_code == 400 and returncode != 0:
             # validation failed, but include the output in the response
@@ -40,7 +40,7 @@ def trigger_validation_via_api(api_url: str, initiated_by: str) -> Tuple[bool, D
             error_msg = "Validation completed with issues"
             # return the data with the output, error_msg is just for status
             return False, data, error_msg
-        
+
         response.raise_for_status()
         return True, data, ""
     except requests.Timeout:

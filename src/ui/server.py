@@ -184,9 +184,7 @@ class UIState:
                 self.connection_mode,
                 self.api_url,
                 self.pipelines,
-            ) = get_prediction_service(
-                self._api_url, self._classification_model_path, self._survival_model_path
-            )
+            ) = get_prediction_service(self._api_url, self._classification_model_path, self._survival_model_path)
             self._last_connection_check = now
 
     def snapshot(self) -> ConnectionSnapshot:
@@ -829,7 +827,7 @@ def create_app(
         initiated_by = "ui-admin"
         success, data, error = trigger_validation_via_api(state.api_url, initiated_by)
         guardrail_text, rows, _ = _gather_admin_status()
-        
+
         # include validation output in response even if it failed
         validation_output = ""
         if data:
