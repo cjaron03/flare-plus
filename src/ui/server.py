@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.config import AdminConfig, CONFIG
 from src.ui.utils.admin import fetch_validation_logs, trigger_validation_via_api
@@ -51,10 +51,18 @@ class ClassificationRequest(BaseModel):
     """Payload for classification predictions."""
 
     timestamp: Optional[datetime] = None
-    window: int = Field(default=24, ge=1, le=168)
+    window: int = Field(default=24)
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="gradient_boosting", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+
+    @field_validator("window")
+    @classmethod
+    def validate_window(cls, v: int) -> int:
+        """validate window is 24 or 48."""
+        if v not in [24, 48]:
+            raise ValueError("window must be 24 or 48")
+        return v
 
 
 class SurvivalRequest(BaseModel):
@@ -447,7 +455,7 @@ def create_app(
         if state.connection_mode == "api" and state.api_url:
             payload = {
                 "timestamp": timestamp.isoformat(),
-                "window": request.window,
+                "window": int(request.window),  # ensure integer type
                 "model_type": request.model_type,
             }
             if region is not None:
@@ -778,13 +786,35 @@ def create_app(
         initiated_by = "ui-admin"
         success, data, error = trigger_validation_via_api(state.api_url, initiated_by)
         guardrail_text, rows, _ = _gather_admin_status()
+        
+        # include validation output in response even if it failed
+        validation_output = ""
+        if data:
+            returncode = data.get("returncode", 0)
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            # format output nicely - prioritize stdout, include stderr if different
+            if stdout:
+                validation_output = stdout
+                if stderr and stderr.strip() and stderr != stdout:
+                    validation_output += f"\n\nSTDERR:\n{stderr}"
+            elif stderr:
+                validation_output = stderr
+            else:
+                validation_output = f"Validation completed with return code: {returncode}"
 
         if not success:
+            # create a user-friendly message
+            if validation_output:
+                user_message = "Validation completed with issues. See output below for details."
+            else:
+                user_message = error or "Validation failed."
             return {
                 "success": False,
-                "message": error or "Validation failed.",
+                "message": user_message,
                 "guardrailStatus": guardrail_text,
                 "validationHistory": rows,
+                "validationOutput": validation_output,
             }
 
         output_lines = []

@@ -149,6 +149,9 @@ def create_app(
                 return jsonify({"error": "timestamp is required"}), 400
 
             timestamp = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+            # normalize to timezone-naive UTC for pandas compatibility
+            if timestamp.tzinfo is not None:
+                timestamp = timestamp.replace(tzinfo=None)
             window = data.get("window", 24)
             model_type = data.get("model_type", "gradient_boosting")
             region_number = data.get("region_number")
@@ -191,6 +194,9 @@ def create_app(
                 return jsonify({"error": "timestamp is required"}), 400
 
             timestamp = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+            # normalize to timezone-naive UTC for pandas compatibility
+            if timestamp.tzinfo is not None:
+                timestamp = timestamp.replace(tzinfo=None)
             model_type = data.get("model_type", "cox")
             region_number = data.get("region_number")
             time_buckets = data.get("time_buckets")

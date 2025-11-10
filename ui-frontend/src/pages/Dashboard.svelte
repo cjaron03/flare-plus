@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { fetchStatus, triggerIngestion } from "../lib/api";
   import StatusPill from "../components/StatusPill.svelte";
+  import LoadingSpinner from "../components/LoadingSpinner.svelte";
 
   let loading = true;
   let status;
@@ -74,10 +75,20 @@
       </p>
       <div class="button-row">
         <button class="primary" on:click={handleRefresh} disabled={ingestLoading}>
-          {ingestLoading ? "Refreshing…" : "Refresh Data & Status"}
+          {#if ingestLoading}
+            <LoadingSpinner size={16} color="#ffffff" />
+            <span>Refreshing…</span>
+          {:else}
+            Refresh Data & Status
+          {/if}
         </button>
         <button class="secondary" on:click={loadStatus} disabled={loading}>
-          {loading ? "Loading…" : "Reload Snapshot"}
+          {#if loading}
+            <LoadingSpinner size={16} />
+            <span>Loading…</span>
+          {:else}
+            Reload Snapshot
+          {/if}
         </button>
       </div>
       {#if ingestMessage}

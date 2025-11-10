@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import PlotlyChart from "../components/PlotlyChart.svelte";
+  import LoadingSpinner from "../components/LoadingSpinner.svelte";
   import { fetchStatus, predictClassification, predictSurvival } from "../lib/api";
 
   const formatInputValue = (date = new Date()) => {
@@ -62,6 +63,8 @@
   const runClassification = async (forceRefresh = false) => {
     classificationLoading = true;
     classificationStatus = "";
+    classificationResult = null;
+    classificationChart = null;
     try {
       const payload = {
         timestamp: toISO(timestamp),
@@ -71,6 +74,16 @@
         forceRefresh
       };
       const result = await predictClassification(payload);
+      if (result && result.success === false) {
+        classificationStatus = result.message || "Prediction failed";
+        classificationLoading = false;
+        return;
+      }
+      if (!result || !result.result) {
+        classificationStatus = "Invalid response from server";
+        classificationLoading = false;
+        return;
+      }
       classificationResult = result.result;
       classificationChart = [
         {
@@ -82,12 +95,14 @@
           marker: { color: "#38bdf8" }
         }
       ];
-      classificationStatus = result.status;
+      classificationStatus = result.status || "Prediction completed successfully";
       if (forceRefresh) {
         await loadStatus();
       }
     } catch (err) {
-      classificationStatus = err.message;
+      classificationStatus = err.message || err.data?.message || "Failed to run prediction. Check that the API server is running and models are loaded.";
+      classificationResult = null;
+      classificationChart = null;
     } finally {
       classificationLoading = false;
     }
@@ -96,6 +111,9 @@
   const runSurvival = async (forceRefresh = false) => {
     survivalLoading = true;
     survivalStatus = "";
+    survivalResult = null;
+    survivalCurve = null;
+    survivalDistribution = null;
     try {
       const payload = {
         timestamp: toISO(timestamp),
@@ -104,6 +122,16 @@
         forceRefresh
       };
       const result = await predictSurvival(payload);
+      if (result && result.success === false) {
+        survivalStatus = result.message || "Prediction failed";
+        survivalLoading = false;
+        return;
+      }
+      if (!result || !result.result) {
+        survivalStatus = "Invalid response from server";
+        survivalLoading = false;
+        return;
+      }
       survivalResult = result.result;
       survivalCurve = [
         {
@@ -124,12 +152,15 @@
           textposition: "outside"
         }
       ];
-      survivalStatus = result.status;
+      survivalStatus = result.status || "Prediction completed successfully";
       if (forceRefresh) {
         await loadStatus();
       }
     } catch (err) {
-      survivalStatus = err.message;
+      survivalStatus = err.message || err.data?.message || "Failed to run prediction. Check that the API server is running and models are loaded.";
+      survivalResult = null;
+      survivalCurve = null;
+      survivalDistribution = null;
     } finally {
       survivalLoading = false;
     }
@@ -159,42 +190,51 @@
 
   <div class="grid two">
     <div class="card">
-      <h2>Classification (24-48h window)</h2>
+      <h2>Classification prediction</h2>
       <p>
-        Predicts the maximum flare class (None/C/M/X) expected within the selected window. Use the force refresh button
-        to bypass throttling if you just updated data.
+        Predict the maximum solar flare class (None, C, M, or X) expected within the next 24 or 48 hours for a specific
+        solar region at a given time. This helps assess short-term flare risk.
       </p>
 
       <form on:submit|preventDefault={() => runClassification(false)}>
         <label>
-          Observation timestamp
+          Observation time
           <input type="datetime-local" bind:value={timestamp} max="9999-12-31T23:59" />
+          <small>The timestamp for which to generate the prediction</small>
         </label>
         <label>
-          Region number (optional)
+          Solar region number (optional)
           <input type="number" bind:value={regionNumber} placeholder="e.g., 3598" min="0" />
+          <small>Leave empty to predict for all active regions</small>
         </label>
 
         <div class="grid two">
           <label>
-            Prediction window (hours)
+            Prediction window
             <select bind:value={windowHours}>
-              <option value="24">24h</option>
-              <option value="48">48h</option>
+              <option value="24">24 hours</option>
+              <option value="48">48 hours</option>
             </select>
+            <small>Time horizon for the prediction</small>
           </label>
           <label>
-            Model
+            Model type
             <select bind:value={modelType}>
               <option value="logistic">Logistic regression</option>
               <option value="gradient_boosting">Gradient boosting</option>
             </select>
+            <small>Machine learning model to use</small>
           </label>
         </div>
 
         <div class="button-row">
           <button class="primary" type="submit" disabled={classificationLoading}>
-            {classificationLoading ? "Predicting…" : "Predict"}
+            {#if classificationLoading}
+              <LoadingSpinner size={16} color="#ffffff" />
+              <span>Predicting…</span>
+            {:else}
+              Run prediction
+            {/if}
           </button>
           <button
             class="secondary"
@@ -202,13 +242,20 @@
             on:click={() => runClassification(true)}
             disabled={classificationLoading}
           >
-            Force refresh
+            {#if classificationLoading}
+              <LoadingSpinner size={16} />
+              <span>Force refresh & predict</span>
+            {:else}
+              Force refresh & predict
+            {/if}
           </button>
         </div>
       </form>
 
       {#if classificationStatus}
-        <p>{classificationStatus}</p>
+        <div class={classificationStatus.includes("error") || classificationStatus.includes("Error") || classificationStatus.includes("failed") || classificationStatus.includes("unavailable") ? "warning" : ""} style="margin-top: 1rem; padding: 0.75rem; border-radius: 0.375rem; {classificationStatus.includes('error') || classificationStatus.includes('Error') || classificationStatus.includes('failed') || classificationStatus.includes('unavailable') ? 'border-color: #f87171; background: rgba(248, 113, 113, 0.1);' : 'border-color: #60a5fa; background: rgba(96, 165, 250, 0.1);'}">
+          {classificationStatus}
+        </div>
       {/if}
 
       {#if classificationResult}
@@ -235,40 +282,56 @@
     </div>
 
     <div class="card">
-      <h2>Survival analysis (time-to-event)</h2>
+      <h2>Survival analysis</h2>
       <p>
-        Predicts when a C-class flare is likely to occur using survival analysis. The chart shows the survival curve and
-        bucketed probabilities for different horizons.
+        Predict when a C-class flare is likely to occur using time-to-event analysis. Shows probability distributions
+        across different time horizons (0-168 hours) and a survival curve indicating the likelihood of flare occurrence
+        over time.
       </p>
 
       <form on:submit|preventDefault={() => runSurvival(false)}>
         <label>
-          Observation timestamp
+          Observation time
           <input type="datetime-local" bind:value={timestamp} max="9999-12-31T23:59" />
+          <small>The timestamp for which to generate the prediction</small>
         </label>
         <label>
-          Region number (optional)
+          Solar region number (optional)
           <input type="number" bind:value={regionNumber} placeholder="e.g., 3598" min="0" />
+          <small>Leave empty to predict for all active regions</small>
         </label>
         <label>
-          Model
+          Model type
           <select bind:value={survivalModel}>
             <option value="cox">Cox proportional hazards</option>
             <option value="gb">Gradient boosting survival</option>
           </select>
+          <small>Survival analysis model to use</small>
         </label>
         <div class="button-row">
           <button class="primary" type="submit" disabled={survivalLoading}>
-            {survivalLoading ? "Predicting…" : "Predict"}
+            {#if survivalLoading}
+              <LoadingSpinner size={16} color="#ffffff" />
+              <span>Predicting…</span>
+            {:else}
+              Run prediction
+            {/if}
           </button>
           <button class="secondary" type="button" on:click={() => runSurvival(true)} disabled={survivalLoading}>
-            Force refresh
+            {#if survivalLoading}
+              <LoadingSpinner size={16} />
+              <span>Force refresh & predict</span>
+            {:else}
+              Force refresh & predict
+            {/if}
           </button>
         </div>
       </form>
 
       {#if survivalStatus}
-        <p>{survivalStatus}</p>
+        <div class={survivalStatus.includes("error") || survivalStatus.includes("Error") || survivalStatus.includes("failed") || survivalStatus.includes("unavailable") ? "warning" : ""} style="margin-top: 1rem; padding: 0.75rem; border-radius: 0.375rem; {survivalStatus.includes('error') || survivalStatus.includes('Error') || survivalStatus.includes('failed') || survivalStatus.includes('unavailable') ? 'border-color: #f87171; background: rgba(248, 113, 113, 0.1);' : 'border-color: #60a5fa; background: rgba(96, 165, 250, 0.1);'}">
+          {survivalStatus}
+        </div>
       {/if}
 
       {#if survivalResult}

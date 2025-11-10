@@ -22,6 +22,13 @@ from src.features.complexity import compute_mcintosh_complexity, compute_mount_w
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_timestamp(ts: datetime) -> datetime:
+    """normalize timestamp to timezone-naive UTC for pandas compatibility."""
+    if ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
 # time-varying covariate config
 COVARIATE_CONFIG = CONFIG.get("time_varying_covariates", {})
 LOOKBACK_WINDOWS = COVARIATE_CONFIG.get("lookback_windows", [1, 3, 6, 12, 24])  # hours
@@ -51,6 +58,8 @@ class TimeVaryingCovariateEngineer:
         returns:
             dict with flux, regions, magnetograms, flares dataframes
         """
+        min_timestamp = _normalize_timestamp(min_timestamp)
+        max_timestamp = _normalize_timestamp(max_timestamp)
         cutoff_time = min_timestamp - timedelta(hours=max_lookback_hours)
         data = {}
 
@@ -64,7 +73,7 @@ class TimeVaryingCovariateEngineer:
                     .all()
                 )
                 data["flux"] = pd.DataFrame(
-                    [{"timestamp": r.timestamp, "flux_long": r.flux_long, "flux_short": r.flux_short} for r in flux_records]
+                    [{"timestamp": _normalize_timestamp(r.timestamp), "flux_long": r.flux_long, "flux_short": r.flux_short} for r in flux_records]
                 )
 
                 # load solar regions
@@ -77,7 +86,7 @@ class TimeVaryingCovariateEngineer:
                 data["regions"] = pd.DataFrame(
                     [
                         {
-                            "timestamp": r.timestamp,
+                            "timestamp": _normalize_timestamp(r.timestamp),
                             "region_number": r.region_number,
                             "mcintosh_class": r.mcintosh_class,
                             "mount_wilson_class": r.mount_wilson_class,
@@ -97,7 +106,8 @@ class TimeVaryingCovariateEngineer:
                 data["flares"] = pd.DataFrame(
                     [
                         {
-                            "peak_time": r.peak_time,
+                            "peak_time": _normalize_timestamp(r.peak_time),
+                            "start_time": _normalize_timestamp(r.start_time) if r.start_time else None,
                             "class_category": r.class_category,
                             "class_magnitude": r.class_magnitude,
                             "active_region": r.active_region,
@@ -128,6 +138,7 @@ class TimeVaryingCovariateEngineer:
         returns:
             dict with flux metrics
         """
+        timestamp = _normalize_timestamp(timestamp)
         cutoff_time = timestamp - timedelta(hours=lookback_hours)
 
         try:
@@ -231,6 +242,7 @@ class TimeVaryingCovariateEngineer:
         returns:
             dict with complexity metrics
         """
+        timestamp = _normalize_timestamp(timestamp)
         cutoff_time = timestamp - timedelta(hours=lookback_hours)
 
         try:
@@ -340,6 +352,7 @@ class TimeVaryingCovariateEngineer:
         returns:
             dict with flare history metrics
         """
+        timestamp = _normalize_timestamp(timestamp)
         cutoff_time = timestamp - timedelta(hours=lookback_hours)
 
         try:

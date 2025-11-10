@@ -13,6 +13,13 @@
   ];
 
   $: activePath = $location || "/";
+  
+  // preserve route on HMR updates
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      // router will handle cleanup
+    });
+  }
 </script>
 
 <div class="app-shell">

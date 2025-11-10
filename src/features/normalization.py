@@ -215,11 +215,12 @@ def handle_missing_data(
                 fill_val = col_mean if pd.notna(col_mean) else 0
                 features_processed[col] = features_processed[col].fillna(fill_val)
 
-    # fill any remaining missing values in non-numeric columns with a placeholder
+    # drop non-numeric columns as they cannot be used by the model
+    # machine learning models expect numeric features only
     non_numeric_cols = features_processed.select_dtypes(exclude=[np.number]).columns.tolist()
-    for col in non_numeric_cols:
-        if features_processed[col].isnull().any():
-            features_processed[col] = features_processed[col].fillna("unknown")
+    if non_numeric_cols:
+        logger.warning(f"dropping non-numeric columns (models require numeric features): {non_numeric_cols}")
+        features_processed = features_processed.drop(columns=non_numeric_cols)
 
     return features_processed
 
