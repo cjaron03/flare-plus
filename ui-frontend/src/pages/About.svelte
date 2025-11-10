@@ -54,7 +54,7 @@
         <ul>
           {#each endpointList as [name, url]}
             <li>
-              <strong>{name.replace("_", " ").toUpperCase()}:</strong>
+              <strong>{name.replace(/_/g, " ").toUpperCase()}:</strong>
               <a href={url} target="_blank" rel="noreferrer">{url}</a>
             </li>
           {/each}

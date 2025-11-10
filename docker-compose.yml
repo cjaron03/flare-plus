@@ -95,6 +95,12 @@ services:
     ports:
       - "${UI_HOST_PORT:-7860}:${UI_PORT:-7860}"
     volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config.yaml:/app/config.yaml
+      - ./scripts:/app/scripts
+      - app_data:/app/data
+      - app_models:/app/models
       - ./ui-frontend/dist:/app/ui-frontend/dist:ro
 
   # one-off ingestion runner (used by ./flare ingest)

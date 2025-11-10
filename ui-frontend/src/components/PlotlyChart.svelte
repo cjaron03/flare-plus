@@ -17,15 +17,17 @@
     Plotly.react(container, plotData, layout, config);
   };
 
-  onMount(() => {
-    render();
-    onDestroy(() => {
-      if (container) {
-        Plotly.purge(container);
-      }
-    });
+  onDestroy(() => {
+    if (container) {
+      Plotly.purge(container);
+    }
   });
 
+  onMount(() => {
+    render();
+  });
+
+  $: container, data, layout, config;
   $: if (container) {
     render();
   }
