@@ -4,6 +4,7 @@ import logging
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 
+import numpy as np
 import pandas as pd
 
 from src.config import CONFIG
@@ -31,6 +32,14 @@ from src.features.normalization import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_timestamp(ts: datetime) -> datetime:
+    """normalize timestamp to timezone-naive UTC for pandas compatibility."""
+    if ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
 
 # feature engineering config
 FEATURE_CONFIG = CONFIG.get("feature_engineering", {})
@@ -61,6 +70,8 @@ class FeatureEngineer:
         returns:
             dict with dataframes: flux, regions, magnetograms, flares
         """
+        # normalize timestamp to timezone-naive UTC for pandas compatibility
+        timestamp = _normalize_timestamp(timestamp)
         cutoff_time = timestamp - timedelta(hours=lookback_hours)
 
         data = {}
@@ -77,7 +88,7 @@ class FeatureEngineer:
                 data["flux"] = pd.DataFrame(
                     [
                         {
-                            "timestamp": r.timestamp,
+                            "timestamp": _normalize_timestamp(r.timestamp),
                             "flux_short": r.flux_short,
                             "flux_long": r.flux_long,
                             "satellite": r.satellite,
@@ -85,6 +96,16 @@ class FeatureEngineer:
                         for r in flux_records
                     ]
                 )
+                # ensure timestamp column is timezone-naive
+                if len(data["flux"]) > 0 and "timestamp" in data["flux"].columns:
+                    if (
+                        hasattr(data["flux"]["timestamp"].dtype, "tz")
+                        and data["flux"]["timestamp"].dtype.tz is not None
+                    ):
+                        data["flux"]["timestamp"] = data["flux"]["timestamp"].dt.tz_localize(None)
+                    else:
+                        # normalize individual values if needed
+                        data["flux"]["timestamp"] = data["flux"]["timestamp"].apply(_normalize_timestamp)
 
                 # load solar regions
                 regions_query = (
@@ -96,7 +117,7 @@ class FeatureEngineer:
                 data["regions"] = pd.DataFrame(
                     [
                         {
-                            "timestamp": r.timestamp,
+                            "timestamp": _normalize_timestamp(r.timestamp),
                             "region_number": r.region_number,
                             "latitude": r.latitude,
                             "longitude": r.longitude,
@@ -120,7 +141,7 @@ class FeatureEngineer:
                 data["magnetograms"] = pd.DataFrame(
                     [
                         {
-                            "timestamp": r.timestamp,
+                            "timestamp": _normalize_timestamp(r.timestamp),
                             "region_number": r.region_number,
                             "magnetic_complexity": r.magnetic_complexity,
                             "magnetic_field_polarity": r.magnetic_field_polarity,
@@ -141,7 +162,8 @@ class FeatureEngineer:
                 data["flares"] = pd.DataFrame(
                     [
                         {
-                            "peak_time": r.peak_time,
+                            "peak_time": _normalize_timestamp(r.peak_time),
+                            "start_time": _normalize_timestamp(r.start_time) if r.start_time else None,
                             "class_category": r.class_category,
                             "class_magnitude": r.class_magnitude,
                             "active_region": r.active_region,
@@ -184,6 +206,9 @@ class FeatureEngineer:
         returns:
             dataframe with computed features
         """
+        # normalize timestamp to timezone-naive UTC for pandas compatibility
+        timestamp = _normalize_timestamp(timestamp)
+
         # load data (or use preloaded)
         if preloaded_data is not None:
             # filter preloaded data to the relevant time window for this timestamp
@@ -294,7 +319,17 @@ class FeatureEngineer:
             features.update(flare_counts)
 
         # convert to dataframe
-        features_df = pd.DataFrame([features])
+        # replace None with np.nan to ensure proper numeric dtype inference
+        features_clean = {k: (v if v is not None else np.nan) for k, v in features.items()}
+        features_df = pd.DataFrame([features_clean])
+
+        # ensure numeric columns are properly typed (pandas sometimes infers object dtype)
+        for col in features_df.columns:
+            if col != "timestamp":  # skip timestamp column
+                try:
+                    features_df[col] = pd.to_numeric(features_df[col], errors="ignore")
+                except Exception:
+                    pass  # keep original if conversion fails
 
         # handle missing data
         if handle_missing:

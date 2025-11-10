@@ -9,6 +9,13 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+def _normalize_timestamp(ts: datetime) -> datetime:
+    """normalize timestamp to timezone-naive UTC for pandas compatibility."""
+    if ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
+
 def compute_rolling_statistics(
     data: pd.DataFrame,
     timestamp: datetime,
@@ -43,6 +50,8 @@ def compute_rolling_statistics(
     valid_data = valid_data.sort_values("timestamp")
 
     features: Dict[str, Any] = {}
+
+    timestamp = _normalize_timestamp(timestamp)
 
     for window_hours in windows_hours:
         # filter data within window
@@ -108,6 +117,7 @@ def compute_recency_weighted_flare_counts(
     if flare_data is None or len(flare_data) == 0:
         return {}
 
+    timestamp = _normalize_timestamp(timestamp)
     features = {}
 
     for window_hours in windows_hours:

@@ -47,6 +47,7 @@ models/artifacts/
 # logs
 logs/
 *.log
+.vite.log
 
 # testing
 .pytest_cache/
@@ -64,3 +65,4 @@ AGENTS.md
 ui-frontend/node_modules/
 ui-frontend/dist/
 !ui-frontend/src/lib/
+.vite.pid

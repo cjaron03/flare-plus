@@ -483,6 +483,18 @@ install pre-commit hooks for automatic formatting:
 pip install pre-commit
 pre-commit install
 ```
+the hook runs black on staged files and also executes `black --check src/ tests/ scripts/` so formatting issues surface before CI.
+
+if `pre-commit install` is unavailable in your environment, enable the built-in Git hook instead:
+```bash
+git config core.hooksPath .githooks
+# verify: should list the Black check hook
+ls -l .git/hooks || true
+```
+this native hook runs the same check as CI and blocks commits until formatting passes. fix with:
+```bash
+black src/ tests/ scripts/
+```
 
 manual formatting:
 ```bash

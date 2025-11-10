@@ -313,6 +313,18 @@ def make_api_request(
         error_msg = f"connection error for {endpoint}"
         logger.error(error_msg)
         return False, None, error_msg
+    except requests.HTTPError as e:
+        # Extract detailed error from response body if available
+        error_detail = "unknown error"
+        try:
+            if e.response is not None:
+                error_json = e.response.json()
+                error_detail = error_json.get("error", str(e))
+        except Exception:
+            error_detail = str(e)
+        error_msg = f"request error: {error_detail}"
+        logger.error(f"{error_msg} (status: {e.response.status_code if e.response else 'unknown'})")
+        return False, None, error_msg
     except requests.RequestException as e:
         error_msg = f"request error: {e}"
         logger.error(error_msg)

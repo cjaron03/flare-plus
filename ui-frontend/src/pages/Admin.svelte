@@ -44,16 +44,58 @@
   const handleValidation = async () => {
     validationRunning = true;
     panelError = "";
+    validationOutput = "";
     try {
       const result = await runValidation();
-      validationOutput = result.output || result.message;
+      
+      // always update guardrail status and history
       guardrailStatus = result.guardrailStatus || guardrailStatus;
       validationHistory = result.validationHistory || validationHistory;
-      if (!result.success && result.message) {
+      
+      // prioritize validationOutput, then output, then message
+      if (result.validationOutput) {
+        validationOutput = result.validationOutput;
+        // if validation failed but we have output, don't show error message
+        if (!result.success) {
+          panelError = ""; // clear error since we have detailed output
+        }
+      } else if (result.output) {
+        validationOutput = result.output;
+        if (!result.success) {
+          panelError = "";
+        }
+      } else if (result.message) {
+        // if no detailed output, show message as both error and output
+        if (!result.success) {
+          validationOutput = result.message;
+          panelError = "";
+        } else {
+          validationOutput = result.message;
+        }
+      }
+      
+      // only show error if we have no output at all
+      if (!result.success && !validationOutput && result.message) {
         panelError = result.message;
       }
     } catch (err) {
-      panelError = err.message;
+      // extract error details from response if available
+      let errorMsg = err.message;
+      let errorOutput = err.message;
+      
+      if (err.data) {
+        // check if there's validation output in the error response
+        if (err.data.validationOutput) {
+          errorOutput = err.data.validationOutput;
+          errorMsg = "";
+        } else if (err.data.message) {
+          errorOutput = err.data.message;
+          errorMsg = err.data.message;
+        }
+      }
+      
+      panelError = errorMsg;
+      validationOutput = errorOutput;
     } finally {
       validationRunning = false;
     }
@@ -86,8 +128,10 @@
           {validationRunning ? "Running…" : "Run system validation"}
         </button>
       </div>
-      {#if panelError}
-        <p style="color: #fecaca;">{panelError}</p>
+      {#if panelError && !validationOutput}
+        <div class="warning" style="border-color: #f87171; background: rgba(248, 113, 113, 0.1); margin-bottom: 1rem;">
+          <strong>Error:</strong> {panelError}
+        </div>
       {/if}
       <div style="margin-top: 1rem;">
         <h3>Guardrail status</h3>

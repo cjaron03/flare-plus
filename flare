@@ -5,96 +5,312 @@
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
+# color codes for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+GRAY='\033[0;90m'
+NC='\033[0m' # no color
+
+# symbols
+CHECK="${GREEN}✓${NC}"
+CROSS="${RED}✗${NC}"
+INFO="${BLUE}ℹ${NC}"
+ARROW="${BLUE}→${NC}"
+
+# pid file for vite dev server
+VITE_PID_FILE=".vite.pid"
+VITE_LOG_FILE=".vite.log"
+
+# helper functions
+print_header() {
+  echo ""
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${BLUE} $1${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+}
+
+print_success() {
+  echo -e "  ${CHECK} $1"
+}
+
+print_error() {
+  echo -e "  ${CROSS} $1"
+}
+
+print_info() {
+  echo -e "  ${INFO} $1"
+}
+
+print_url() {
+  echo -e "  ${ARROW} $1: ${GREEN}$2${NC}"
+}
+
+# check if vite dev server is running
+is_vite_running() {
+  if [ -f "$VITE_PID_FILE" ]; then
+    local pid=$(cat "$VITE_PID_FILE")
+    if ps -p "$pid" > /dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# start vite dev server
+start_vite() {
+  if is_vite_running; then
+    print_info "Vite dev server already running (PID: $(cat $VITE_PID_FILE))"
+    return 0
+  fi
+
+  if ! command -v npm &> /dev/null; then
+    print_error "npm not found - cannot start Vite dev server"
+    print_info "Install Node.js/npm or use Docker-only mode"
+    return 1
+  fi
+
+  if [ ! -d "ui-frontend" ]; then
+    print_error "ui-frontend directory not found"
+    return 1
+  fi
+
+  print_info "Starting Vite dev server..."
+  cd ui-frontend
+  npm run dev > "../$VITE_LOG_FILE" 2>&1 &
+  local vite_pid=$!
+  cd ..
+
+  echo "$vite_pid" > "$VITE_PID_FILE"
+
+  # wait a moment for vite to start
+  sleep 2
+
+  if ps -p "$vite_pid" > /dev/null 2>&1; then
+    print_success "Vite dev server started (PID: $vite_pid)"
+    return 0
+  else
+    print_error "Failed to start Vite dev server"
+    rm -f "$VITE_PID_FILE"
+    return 1
+  fi
+}
+
+# stop vite dev server
+stop_vite() {
+  if [ -f "$VITE_PID_FILE" ]; then
+    local pid=$(cat "$VITE_PID_FILE")
+    if ps -p "$pid" > /dev/null 2>&1; then
+      print_info "Stopping Vite dev server (PID: $pid)..."
+      kill "$pid" 2>/dev/null
+      sleep 1
+      if ps -p "$pid" > /dev/null 2>&1; then
+        kill -9 "$pid" 2>/dev/null
+      fi
+      print_success "Vite dev server stopped"
+    fi
+    rm -f "$VITE_PID_FILE"
+  fi
+}
+
 case "$1" in
   up)
-    echo "starting core docker services (postgres, app)..."
-    docker compose up -d postgres app
-    echo "services started!"
-    echo "postgres: localhost:${DB_PORT:-5432}"
-    echo "tip: use './flare ingest' to load data, './flare api-bg' to expose the api, './flare ui-bg' for the dashboard"
+    print_header "Starting flare+ Development Environment"
+
+    print_info "Starting Docker services..."
+    docker compose up -d postgres api ui 2>&1 | grep -v "Container.*Running" || true
+
+    # wait for services to be healthy
+    sleep 2
+
+    print_success "Docker services started"
+
+    # start vite dev server
+    start_vite
+
+    print_header "Services Ready"
+    print_url "Vite Dev (HMR)" "http://localhost:5173"
+    print_url "UI Backend" "http://localhost:7860"
+    print_url "API Service" "http://localhost:5001"
+    print_url "PostgreSQL" "localhost:5432"
+    echo ""
+    print_info "Use ${BLUE}./flare status${NC} to check service status"
+    print_info "Use ${BLUE}./flare dev-logs${NC} to view Vite logs"
+    print_info "Use ${BLUE}./flare down${NC} to stop all services"
+    echo ""
     ;;
+
   down)
-    echo "stopping all docker services..."
-    docker compose down
-    echo "services stopped"
+    print_header "Stopping flare+ Development Environment"
+
+    # stop vite dev server
+    stop_vite
+
+    print_info "Stopping Docker services..."
+    docker compose down 2>&1 | grep -v "Container.*Stopping\|Container.*Stopped\|Network.*Removing" || true
+
+    print_success "All services stopped"
+
+    # cleanup log file
+    rm -f "$VITE_LOG_FILE"
+    echo ""
     ;;
+
+  status)
+    print_header "Service Status"
+
+    # check docker services
+    echo -e "${BLUE}Docker Services:${NC}"
+    if docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | tail -n +2 | grep -q .; then
+      docker compose ps --format "  {{.Service}}: {{.Status}}" 2>/dev/null | tail -n +2
+    else
+      print_error "No Docker services running"
+    fi
+    echo ""
+
+    # check vite dev server
+    echo -e "${BLUE}Vite Dev Server:${NC}"
+    if is_vite_running; then
+      print_success "Running (PID: $(cat $VITE_PID_FILE))"
+      print_url "URL" "http://localhost:5173"
+    else
+      print_error "Not running"
+    fi
+    echo ""
+
+    # show urls
+    echo -e "${BLUE}Available URLs:${NC}"
+    if docker compose ps | grep -q "api.*Up"; then
+      print_url "API Service" "http://localhost:5001"
+    fi
+    if docker compose ps | grep -q "ui.*Up"; then
+      print_url "UI Backend" "http://localhost:7860"
+    fi
+    if is_vite_running; then
+      print_url "Vite Dev (Live Reload)" "http://localhost:5173"
+    fi
+    echo ""
+    ;;
+
+  dev-logs)
+    if [ ! -f "$VITE_LOG_FILE" ]; then
+      print_error "Vite log file not found. Is Vite running?"
+      exit 1
+    fi
+    print_header "Vite Dev Server Logs"
+    print_info "Press Ctrl+C to exit"
+    echo ""
+    tail -f "$VITE_LOG_FILE"
+    ;;
+
   logs)
-    echo "viewing logs (ctrl+c to exit)..."
-    docker compose logs -f
+    print_header "Docker Service Logs"
+    print_info "Press Ctrl+C to exit"
+    echo ""
+    docker compose logs -f --tail=50
     ;;
+
   build)
-    echo "building docker images..."
+    print_header "Building Docker Images"
     docker compose build
-    echo "build complete"
+    print_success "Build complete"
+    echo ""
     ;;
+
   shell)
-    echo "opening shell in app container..."
+    print_info "Opening shell in app container..."
     docker compose exec app /bin/bash
     ;;
+
   db-shell)
-    echo "opening psql shell in database container..."
+    print_info "Opening psql shell in database container..."
     docker compose exec postgres psql -U postgres -d flare_prediction
     ;;
+
   init-db)
-    echo "initializing database schema..."
+    print_info "Initializing database schema..."
     docker compose exec app python scripts/init_db.py
-    echo "database initialized"
+    print_success "Database initialized"
     ;;
+
   ingest)
-    echo "running data ingestion from noaa sources (one-off container)..."
+    print_header "Data Ingestion"
+    print_info "Running data ingestion from NOAA sources..."
     docker compose run --rm ingestion
     ;;
+
   api)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
-    echo "starting flask api service (foreground)..."
-    echo "api will be available at http://127.0.0.1:${API_HOST_PORT}"
-    echo "press ctrl+c to stop (or use ./flare api-stop)"
+    print_header "Starting API Service (Foreground)"
+    print_url "API" "http://127.0.0.1:${API_HOST_PORT}"
+    print_info "Press Ctrl+C to stop"
+    echo ""
     docker compose up api
     ;;
+
   api-stop)
-    echo "stopping api service..."
-    docker compose stop api >/dev/null || true
+    print_info "Stopping API service..."
+    docker compose stop api >/dev/null 2>&1 || true
+    print_success "API service stopped"
     ;;
+
   api-bg)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
-    echo "starting flask api service in background..."
-    docker compose up -d api
-    echo "api running at http://127.0.0.1:${API_HOST_PORT} (container port ${API_PORT:-5000})"
-    echo "use './flare api-stop' to stop the service"
+    print_info "Starting API service in background..."
+    docker compose up -d api 2>&1 | grep -v "Container.*Running" || true
+    sleep 1
+    print_success "API service started"
+    print_url "API" "http://127.0.0.1:${API_HOST_PORT}"
     ;;
+
   api-logs)
-    echo "streaming api logs (ctrl+c to exit)..."
-    docker compose logs -f api
+    print_header "API Service Logs"
+    print_info "Press Ctrl+C to exit"
+    echo ""
+    docker compose logs -f --tail=50 api
     ;;
+
   ui)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
-    echo "starting ui dashboard (fastapi + svelte, foreground)..."
-    echo "dashboard will be available at http://127.0.0.1:${UI_HOST_PORT}"
-    echo "press ctrl+c to stop (or use ./flare ui-stop)"
+    print_header "Starting UI Backend (Foreground)"
+    print_url "UI Backend" "http://127.0.0.1:${UI_HOST_PORT}"
+    print_info "Press Ctrl+C to stop"
+    echo ""
     docker compose up ui
     ;;
+
   ui-stop)
-    echo "stopping ui dashboard..."
-    docker compose stop ui >/dev/null || true
+    print_info "Stopping UI backend..."
+    docker compose stop ui >/dev/null 2>&1 || true
+    print_success "UI backend stopped"
     ;;
+
   ui-bg)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
-    echo "starting ui dashboard in background..."
-    docker compose up -d ui
-    echo "dashboard running at http://127.0.0.1:${UI_HOST_PORT}"
-    echo "use './flare ui-stop' to stop the service"
+    print_info "Starting UI backend in background..."
+    docker compose up -d ui 2>&1 | grep -v "Container.*Running" || true
+    sleep 1
+    print_success "UI backend started"
+    print_url "UI Backend" "http://127.0.0.1:${UI_HOST_PORT}"
     ;;
+
   ui-logs)
-    echo "streaming ui logs (ctrl+c to exit)..."
-    docker compose logs -f ui
+    print_header "UI Backend Logs"
+    print_info "Press Ctrl+C to exit"
+    echo ""
+    docker compose logs -f --tail=50 ui
     ;;
+
   ingest-api)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
-    echo "triggering data ingestion via api endpoint..."
-    echo "note: requires api service running (./flare api-bg)"
+    print_header "Triggering Ingestion via API"
+    print_info "Requires API service running (use: ./flare api-bg)"
     response=$(curl -s -X POST "http://127.0.0.1:${API_HOST_PORT}/ingest" \
       -H "Content-Type: application/json" \
       -d '{"use_cache": true}')
+    echo ""
     if command -v python3 &> /dev/null; then
       echo "$response" | python3 -m json.tool 2>/dev/null || echo "$response"
     elif command -v python &> /dev/null; then
@@ -102,98 +318,118 @@ case "$1" in
     else
       echo "$response"
     fi
+    echo ""
     ;;
+
   test)
-    echo "running test suite..."
+    print_header "Running Test Suite"
     docker compose exec app pytest tests/ -v
     ;;
+
   lint)
-    echo "running linters..."
+    print_header "Running Linters"
+    print_info "Running flake8..."
     docker compose exec app flake8 src/ tests/
+    print_info "Running black check..."
     docker compose exec app black --check src/ tests/ scripts/
     ;;
+
   format)
-    echo "formatting code with black..."
+    print_header "Formatting Code"
     docker compose exec app black src/ tests/ scripts/
-    echo "formatting complete"
+    print_success "Formatting complete"
     ;;
+
   clean)
-    echo "removing containers and volumes..."
+    print_header "Cleanup"
+    print_info "Removing containers and volumes..."
+    stop_vite
     docker compose down -v
     docker system prune -f
-    echo "cleanup complete"
+    rm -f "$VITE_LOG_FILE"
+    print_success "Cleanup complete"
+    echo ""
     ;;
+
   backtest)
     shift  # remove 'backtest' from args
-    echo "running historical backtest..."
+    print_header "Historical Backtest"
     docker compose exec app python scripts/backtest_historical.py "$@"
     ;;
+
   validate)
-    echo "running full system validation..."
+    print_header "System Validation"
     docker compose exec app python scripts/validate_system.py
     ;;
+
   validate-model)
     if [ -z "$2" ]; then
-      echo "error: model path required"
-      echo "usage: ./flare validate-model <model-path>"
-      echo "example: ./flare validate-model /app/models/survival_model.joblib"
+      print_error "Model path required"
+      echo ""
+      echo "Usage: ./flare validate-model <model-path>"
+      echo "Example: ./flare validate-model /app/models/survival_model.joblib"
       exit 1
     fi
-    echo "validating model: $2"
+    print_header "Model Validation"
+    print_info "Validating: $2"
     docker compose exec app python scripts/validate_models.py "$2"
     ;;
+
   check-config)
-    echo "checking environment configuration..."
+    print_header "Configuration Check"
     docker compose exec app python scripts/check_config.py
     ;;
+
   *)
-    echo "flare+ development helper"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE} flare+ development helper${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "usage: ./flare <command>"
+    echo -e "${YELLOW}Primary Commands:${NC}"
+    echo -e "  ${GREEN}up${NC}           Start all services (Docker + Vite dev server)"
+    echo -e "  ${GREEN}down${NC}         Stop all services"
+    echo -e "  ${GREEN}status${NC}       Show running services and URLs"
+    echo -e "  ${GREEN}logs${NC}         View Docker service logs"
+    echo -e "  ${GREEN}dev-logs${NC}     View Vite dev server logs"
     echo ""
-    echo "docker services:"
-    echo "  up         start core services (postgres + app toolbox container)"
-    echo "  down       stop all docker services"
-    echo "  logs       view logs from all services (ctrl+c to exit)"
-    echo "  build      build docker images"
-    echo "  shell      open interactive shell in app container"
-    echo "  db-shell   open psql shell in database container"
-    echo "  clean      remove containers and volumes (cleanup)"
+    echo -e "${YELLOW}Development:${NC}"
+    echo -e "  ${GREEN}build${NC}        Build Docker images"
+    echo -e "  ${GREEN}test${NC}         Run test suite"
+    echo -e "  ${GREEN}lint${NC}         Run linters (flake8, black)"
+    echo -e "  ${GREEN}format${NC}       Format code with black"
+    echo -e "  ${GREEN}shell${NC}        Open shell in app container"
     echo ""
-    echo "database:"
-    echo "  init-db    initialize database schema"
-    echo "  ingest     run data ingestion (one-off container, retries on failure)"
+    echo -e "${YELLOW}Database:${NC}"
+    echo -e "  ${GREEN}init-db${NC}      Initialize database schema"
+    echo -e "  ${GREEN}ingest${NC}       Run data ingestion from NOAA"
+    echo -e "  ${GREEN}db-shell${NC}     Open psql shell"
     echo ""
-    echo "services (api & ui):"
-    echo "  api        start flask api service (foreground, default http://127.0.0.1:5001)"
-    echo "  api-bg     start flask api service in background"
-    echo "  api-stop   stop api service"
-    echo "  api-logs   stream api logs"
-    echo "  ui         start ui dashboard (foreground, default http://127.0.0.1:7860)"
-    echo "  ui-bg      start ui dashboard in background"
-    echo "  ui-stop    stop ui dashboard"
-    echo "  ui-logs    stream ui logs"
-    echo "  ingest-api trigger ingestion via api endpoint (requires api-bg)"
+    echo -e "${YELLOW}Services (Individual Control):${NC}"
+    echo -e "  ${GREEN}api${NC}          Start API (foreground)"
+    echo -e "  ${GREEN}api-bg${NC}       Start API (background)"
+    echo -e "  ${GREEN}api-stop${NC}     Stop API"
+    echo -e "  ${GREEN}api-logs${NC}     View API logs"
+    echo -e "  ${GREEN}ui${NC}           Start UI backend (foreground)"
+    echo -e "  ${GREEN}ui-bg${NC}        Start UI backend (background)"
+    echo -e "  ${GREEN}ui-stop${NC}      Stop UI backend"
+    echo -e "  ${GREEN}ui-logs${NC}      View UI logs"
     echo ""
-    echo "development:"
-    echo "  test       run test suite"
-    echo "  lint       run linters (flake8, black check)"
-    echo "  format     format code with black"
+    echo -e "${YELLOW}Validation:${NC}"
+    echo -e "  ${GREEN}validate${NC}     Run full system validation"
+    echo -e "  ${GREEN}validate-model${NC} <path>  Validate specific model"
+    echo -e "  ${GREEN}check-config${NC} Check environment configuration"
+    echo -e "  ${GREEN}backtest${NC}     Run historical backtest"
     echo ""
-    echo "validation:"
-    echo "  validate             run full system validation"
-    echo "  validate-model PATH  validate specific model file"
-    echo "  check-config         check environment configuration"
-    echo "  backtest [OPTIONS]   run historical backtesting (see --help for options)"
+    echo -e "${YELLOW}Quick Start:${NC}"
+    echo -e "  ${GRAY}./flare up${NC}         # Start everything"
+    echo -e "  ${GRAY}./flare status${NC}     # Check what's running"
+    echo -e "  ${GRAY}./flare ingest${NC}     # Load data"
+    echo -e "  ${GRAY}./flare down${NC}       # Stop everything"
     echo ""
-    echo "examples:"
-    echo "  ./flare up              # start postgres + toolbox container"
-    echo "  ./flare ingest          # populate database via ingestion service"
-    echo "  ./flare api-bg          # start api service in background"
-    echo "  ./flare ui-bg           # start ui dashboard in background"
-    echo "  ./flare ingest-api      # trigger ingestion via running api"
-    echo "  ./flare api-logs        # stream api service logs"
-    echo "  ./flare validate        # run system validation"
-    echo "  ./flare down            # stop all services"
+    echo -e "${YELLOW}URLs (when running):${NC}"
+    echo -e "  ${GRAY}Vite Dev (HMR):${NC}    http://localhost:5173"
+    echo -e "  ${GRAY}UI Backend:${NC}        http://localhost:7860"
+    echo -e "  ${GRAY}API Service:${NC}       http://localhost:5001"
+    echo ""
     ;;
 esac

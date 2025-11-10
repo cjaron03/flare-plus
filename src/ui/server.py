@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.config import AdminConfig, CONFIG
 from src.ui.utils.admin import fetch_validation_logs, trigger_validation_via_api
@@ -51,10 +51,18 @@ class ClassificationRequest(BaseModel):
     """Payload for classification predictions."""
 
     timestamp: Optional[datetime] = None
-    window: int = Field(default=24, ge=1, le=168)
+    window: int = Field(default=24)
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="gradient_boosting", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+
+    @field_validator("window")
+    @classmethod
+    def validate_window(cls, v: int) -> int:
+        """validate window is 24 or 48."""
+        if v not in [24, 48]:
+            raise ValueError("window must be 24 or 48")
+        return v
 
 
 class SurvivalRequest(BaseModel):
@@ -116,6 +124,9 @@ class UIState:
         classification_model_path: Optional[str],
         survival_model_path: Optional[str],
     ):
+        self._api_url = api_url
+        self._classification_model_path = classification_model_path
+        self._survival_model_path = survival_model_path
         (
             self.connection_mode,
             self.api_url,
@@ -124,6 +135,57 @@ class UIState:
 
         self._refresh_lock = Lock()
         self._last_refresh: Optional[datetime] = None
+        self._connection_lock = Lock()
+        self._last_connection_check: Optional[datetime] = None
+
+    def refresh_connection(self, force: bool = False):
+        """
+        re-check api connection and update connection mode.
+
+        uses smart refresh strategy to avoid expensive model reloading:
+        - if in error mode: always refresh
+        - if in stable mode (api/direct): only refresh if >30s since last check or forced
+        - if in api mode: use lightweight health check instead of full reload
+
+        args:
+            force: bypass time-based throttling
+        """
+        with self._connection_lock:
+            now = datetime.utcnow()
+
+            # determine if we should refresh
+            should_refresh_now = force
+            if not should_refresh_now:
+                if self.connection_mode == "error":
+                    # always try to recover from error state
+                    should_refresh_now = True
+                elif self._last_connection_check is None:
+                    # first check after init
+                    should_refresh_now = True
+                else:
+                    # in stable mode, only refresh if enough time passed
+                    elapsed = (now - self._last_connection_check).total_seconds()
+                    should_refresh_now = elapsed >= 30
+
+            if not should_refresh_now:
+                return
+
+            # if already in api mode, try lightweight health check first
+            if self.connection_mode == "api" and self.api_url:
+                health = get_api_health_status(self.api_url)
+                if health:
+                    # api still healthy, no need to reload
+                    self._last_connection_check = now
+                    return
+                # api became unhealthy, fall through to full reload
+
+            # perform full connection refresh (may reload models from disk)
+            (
+                self.connection_mode,
+                self.api_url,
+                self.pipelines,
+            ) = get_prediction_service(self._api_url, self._classification_model_path, self._survival_model_path)
+            self._last_connection_check = now
 
     def snapshot(self) -> ConnectionSnapshot:
         """Return a serializable snapshot used by multiple endpoints."""
@@ -333,6 +395,8 @@ def create_app(
 
     @app.get("/ui/api/status")
     def get_status() -> Dict[str, Any]:
+        # refresh connection state to detect if api became available
+        state.refresh_connection()
         snapshot = asdict(state.snapshot())
         data_freshness = _serialize_data_freshness()
         return {
@@ -365,6 +429,8 @@ def create_app(
                 "dataFreshness": _serialize_data_freshness(),
             }
 
+        # re-check api connection before rejecting (api may have become available since startup)
+        state.refresh_connection(force=True)
         if state.connection_mode != "api" or not state.api_url:
             return {
                 "success": False,
@@ -430,7 +496,7 @@ def create_app(
         if state.connection_mode == "api" and state.api_url:
             payload = {
                 "timestamp": timestamp.isoformat(),
-                "window": request.window,
+                "window": int(request.window),  # ensure integer type
                 "model_type": request.model_type,
             }
             if region is not None:
@@ -762,12 +828,34 @@ def create_app(
         success, data, error = trigger_validation_via_api(state.api_url, initiated_by)
         guardrail_text, rows, _ = _gather_admin_status()
 
+        # include validation output in response even if it failed
+        validation_output = ""
+        if data:
+            returncode = data.get("returncode", 0)
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            # format output nicely - prioritize stdout, include stderr if different
+            if stdout:
+                validation_output = stdout
+                if stderr and stderr.strip() and stderr != stdout:
+                    validation_output += f"\n\nSTDERR:\n{stderr}"
+            elif stderr:
+                validation_output = stderr
+            else:
+                validation_output = f"Validation completed with return code: {returncode}"
+
         if not success:
+            # create a user-friendly message
+            if validation_output:
+                user_message = "Validation completed with issues. See output below for details."
+            else:
+                user_message = error or "Validation failed."
             return {
                 "success": False,
-                "message": error or "Validation failed.",
+                "message": user_message,
                 "guardrailStatus": guardrail_text,
                 "validationHistory": rows,
+                "validationOutput": validation_output,
             }
 
         output_lines = []

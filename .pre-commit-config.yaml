@@ -15,3 +15,10 @@ repos:
     hooks:
       - id: bandit
         args: [-ll, -f, screen]
+  - repo: local
+    hooks:
+      - id: black-src-check
+        name: black --check (src/tests/scripts)
+        entry: black --check src/ tests/ scripts/
+        language: system
+        pass_filenames: false

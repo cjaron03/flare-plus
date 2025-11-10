@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { fetchStatus, triggerIngestion } from "../lib/api";
   import StatusPill from "../components/StatusPill.svelte";
+  import LoadingSpinner from "../components/LoadingSpinner.svelte";
 
   let loading = true;
   let status;
@@ -30,10 +31,8 @@
       const result = await triggerIngestion({ useCache: true });
       ingestMessage = result.message;
       ingestSummary = result.summary ?? "";
-      status = {
-        ...status,
-        dataFreshness: result.dataFreshness ?? status?.dataFreshness
-      };
+      // reload full status to update all data freshness and connection info
+      await loadStatus();
     } catch (err) {
       ingestMessage = err.message;
     } finally {
@@ -69,6 +68,42 @@
   {#if loading}
     <div class="card">Loading status…</div>
   {:else if status}
+    <div class="card">
+      <div class="section-title">Ingestion & Refresh</div>
+      <p>
+        Trigger NOAA/SWPC ingestion via the API. The UI enforces a short cooldown to avoid hammering the pipeline.
+      </p>
+      <div class="button-row">
+        <button class="primary" on:click={handleRefresh} disabled={ingestLoading}>
+          {#if ingestLoading}
+            <LoadingSpinner size={16} color="#ffffff" />
+            <span>Refreshing…</span>
+          {:else}
+            Refresh Data & Status
+          {/if}
+        </button>
+        <button class="secondary" on:click={loadStatus} disabled={loading}>
+          {#if loading}
+            <LoadingSpinner size={16} />
+            <span>Loading…</span>
+          {:else}
+            Reload Snapshot
+          {/if}
+        </button>
+      </div>
+      {#if ingestMessage}
+        <p style="margin-top: 1rem;">
+          {ingestMessage}
+        </p>
+      {/if}
+      {#if ingestSummary}
+        <pre>{ingestSummary}</pre>
+      {/if}
+      {#if status.lastRefresh}
+        <small>Last refresh marker: {new Date(status.lastRefresh).toLocaleString()}</small>
+      {/if}
+    </div>
+
     <div class="grid two">
       <div class="card">
         <div class="section-title">Connection & Models</div>
@@ -138,32 +173,6 @@
           {/each}
         </div>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="section-title">Ingestion & Refresh</div>
-      <p>
-        Trigger NOAA/SWPC ingestion via the API. The UI enforces a short cooldown to avoid hammering the pipeline.
-      </p>
-      <div class="button-row">
-        <button class="primary" on:click={handleRefresh} disabled={ingestLoading}>
-          {ingestLoading ? "Refreshing…" : "Refresh Data & Status"}
-        </button>
-        <button class="secondary" on:click={loadStatus} disabled={loading}>
-          {loading ? "Loading…" : "Reload Snapshot"}
-        </button>
-      </div>
-      {#if ingestMessage}
-        <p style="margin-top: 1rem;">
-          {ingestMessage}
-        </p>
-      {/if}
-      {#if ingestSummary}
-        <pre>{ingestSummary}</pre>
-      {/if}
-      {#if status.lastRefresh}
-        <small>Last refresh marker: {new Date(status.lastRefresh).toLocaleString()}</small>
-      {/if}
     </div>
   {/if}
 </div>

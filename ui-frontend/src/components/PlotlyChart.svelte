@@ -1,6 +1,6 @@
 <script>
   import { onDestroy, onMount } from "svelte";
-  import Plotly from "plotly.js-dist-min";
+  import * as Plotly from "plotly.js-dist-min";
 
   export let data = [];
   export let layout = {};

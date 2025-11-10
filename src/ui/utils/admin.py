@@ -26,8 +26,23 @@ def trigger_validation_via_api(api_url: str, initiated_by: str) -> Tuple[bool, D
             json={"initiated_by": initiated_by},
             timeout=900,
         )
+
+        # get response data regardless of status code
+        data = response.json() if response.content else {}
+        returncode = data.get("returncode", 0)
+
+        # validation script returns non-zero on failure, but we still want to show the output
+        if response.status_code == 400 and returncode != 0:
+            # validation failed, but include the output in the response
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            # create a user-friendly error message
+            error_msg = "Validation completed with issues"
+            # return the data with the output, error_msg is just for status
+            return False, data, error_msg
+
         response.raise_for_status()
-        return True, response.json(), ""
+        return True, data, ""
     except requests.Timeout:
         logger.error("validation trigger timed out")
         return False, {}, "Validation timed out. Check server logs for details."
@@ -39,6 +54,14 @@ def trigger_validation_via_api(api_url: str, initiated_by: str) -> Tuple[bool, D
         try:
             data = exc.response.json() if exc.response is not None else {}
             message = data.get("error", str(exc))
+            # include stdout/stderr if available
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            if stdout or stderr:
+                if stderr:
+                    message += f"\n\nSTDERR:\n{stderr}"
+                if stdout:
+                    message += f"\n\nSTDOUT:\n{stdout}"
         except Exception:
             message = str(exc)
         return False, {}, f"Validation failed: {message}"
