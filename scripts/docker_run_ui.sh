@@ -1,6 +1,6 @@
 #!/bin/sh
 # entrypoint for running the UI dashboard inside docker-compose
-set -euo pipefail
+set -eu
 
 API_URL="${API_URL:-http://api:5000}"
 HOST="${UI_HOST:-0.0.0.0}"

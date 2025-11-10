@@ -11,6 +11,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  trivy-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: run trivy (fs scan)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+          format: sarif
+          output: trivy-ci.sarif
+
+      - name: upload trivy report
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-ci.sarif
+
   lint-and-format:
     runs-on: ubuntu-latest
     # only run on PRs (main push already validated by PR checks)
@@ -22,7 +49,7 @@ jobs:
       - name: setup python and deps
         uses: ./.github/actions/setup-python-deps
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           install-dev: 'true'
       
       - name: lint with flake8
@@ -56,9 +83,9 @@ jobs:
           - 5432:5432
     
     strategy:
-      # test only 3.10 on PRs for faster feedback, 3.10/3.11 on main for compatibility
+      # test only 3.12 on PRs for faster feedback, 3.10/3.11/3.12 on main for compatibility
       matrix:
-        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10"]') || fromJSON('["3.10", "3.11"]') }}
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.12"]') || fromJSON('["3.10", "3.11", "3.12"]') }}
     
     steps:
       - uses: actions/checkout@v4

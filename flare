@@ -1,5 +1,5 @@
 #!/bin/bash
-# flare+ helper script - wrapper around docker-compose and service management
+# flare+ helper script - wrapper around docker compose and service management
 
 # enable docker buildkit for faster builds with cache mounts
 export DOCKER_BUILDKIT=1
@@ -8,74 +8,74 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 case "$1" in
   up)
     echo "starting core docker services (postgres, app)..."
-    docker-compose up -d postgres app
+    docker compose up -d postgres app
     echo "services started!"
     echo "postgres: localhost:${DB_PORT:-5432}"
     echo "tip: use './flare ingest' to load data, './flare api-bg' to expose the api, './flare ui-bg' for the dashboard"
     ;;
   down)
     echo "stopping all docker services..."
-    docker-compose down
+    docker compose down
     echo "services stopped"
     ;;
   logs)
     echo "viewing logs (ctrl+c to exit)..."
-    docker-compose logs -f
+    docker compose logs -f
     ;;
   build)
     echo "building docker images..."
-    docker-compose build
+    docker compose build
     echo "build complete"
     ;;
   shell)
     echo "opening shell in app container..."
-    docker-compose exec app /bin/bash
+    docker compose exec app /bin/bash
     ;;
   db-shell)
     echo "opening psql shell in database container..."
-    docker-compose exec postgres psql -U postgres -d flare_prediction
+    docker compose exec postgres psql -U postgres -d flare_prediction
     ;;
   init-db)
     echo "initializing database schema..."
-    docker-compose exec app python scripts/init_db.py
+    docker compose exec app python scripts/init_db.py
     echo "database initialized"
     ;;
   ingest)
     echo "running data ingestion from noaa sources (one-off container)..."
-    docker-compose run --rm ingestion
+    docker compose run --rm ingestion
     ;;
   api)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
     echo "starting flask api service (foreground)..."
     echo "api will be available at http://127.0.0.1:${API_HOST_PORT}"
     echo "press ctrl+c to stop (or use ./flare api-stop)"
-    docker-compose up api
+    docker compose up api
     ;;
   api-stop)
     echo "stopping api service..."
-    docker-compose stop api >/dev/null || true
+    docker compose stop api >/dev/null || true
     ;;
   api-bg)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
     echo "starting flask api service in background..."
-    docker-compose up -d api
+    docker compose up -d api
     echo "api running at http://127.0.0.1:${API_HOST_PORT} (container port ${API_PORT:-5000})"
     echo "use './flare api-stop' to stop the service"
     ;;
   api-logs)
     echo "streaming api logs (ctrl+c to exit)..."
-    docker-compose logs -f api
+    docker compose logs -f api
     ;;
   ui)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
     echo "starting ui dashboard (fastapi + svelte, foreground)..."
     echo "dashboard will be available at http://127.0.0.1:${UI_HOST_PORT}"
     echo "press ctrl+c to stop (or use ./flare ui-stop)"
-    docker-compose up ui
+    docker compose up ui
     ;;
   ui-stop)
     echo "stopping ui dashboard..."
-    docker-compose stop ui >/dev/null || true
+    docker compose stop ui >/dev/null || true
     ;;
   ui-bg)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
@@ -86,7 +86,7 @@ case "$1" in
     ;;
   ui-logs)
     echo "streaming ui logs (ctrl+c to exit)..."
-    docker-compose logs -f ui
+    docker compose logs -f ui
     ;;
   ingest-api)
     API_HOST_PORT="${API_HOST_PORT:-5001}"
@@ -105,32 +105,32 @@ case "$1" in
     ;;
   test)
     echo "running test suite..."
-    docker-compose exec app pytest tests/ -v
+    docker compose exec app pytest tests/ -v
     ;;
   lint)
     echo "running linters..."
-    docker-compose exec app flake8 src/ tests/
-    docker-compose exec app black --check src/ tests/ scripts/
+    docker compose exec app flake8 src/ tests/
+    docker compose exec app black --check src/ tests/ scripts/
     ;;
   format)
     echo "formatting code with black..."
-    docker-compose exec app black src/ tests/ scripts/
+    docker compose exec app black src/ tests/ scripts/
     echo "formatting complete"
     ;;
   clean)
     echo "removing containers and volumes..."
-    docker-compose down -v
+    docker compose down -v
     docker system prune -f
     echo "cleanup complete"
     ;;
   backtest)
     shift  # remove 'backtest' from args
     echo "running historical backtest..."
-    docker-compose exec app python scripts/backtest_historical.py "$@"
+    docker compose exec app python scripts/backtest_historical.py "$@"
     ;;
   validate)
     echo "running full system validation..."
-    docker-compose exec app python scripts/validate_system.py
+    docker compose exec app python scripts/validate_system.py
     ;;
   validate-model)
     if [ -z "$2" ]; then
@@ -140,11 +140,11 @@ case "$1" in
       exit 1
     fi
     echo "validating model: $2"
-    docker-compose exec app python scripts/validate_models.py "$2"
+    docker compose exec app python scripts/validate_models.py "$2"
     ;;
   check-config)
     echo "checking environment configuration..."
-    docker-compose exec app python scripts/check_config.py
+    docker compose exec app python scripts/check_config.py
     ;;
   *)
     echo "flare+ development helper"
