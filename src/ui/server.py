@@ -135,16 +135,59 @@ class UIState:
 
         self._refresh_lock = Lock()
         self._last_refresh: Optional[datetime] = None
+        self._connection_lock = Lock()
+        self._last_connection_check: Optional[datetime] = None
 
-    def refresh_connection(self):
-        """re-check api connection and update connection mode."""
-        (
-            self.connection_mode,
-            self.api_url,
-            self.pipelines,
-        ) = get_prediction_service(
-            self._api_url, self._classification_model_path, self._survival_model_path
-        )
+    def refresh_connection(self, force: bool = False):
+        """
+        re-check api connection and update connection mode.
+
+        uses smart refresh strategy to avoid expensive model reloading:
+        - if in error mode: always refresh
+        - if in stable mode (api/direct): only refresh if >30s since last check or forced
+        - if in api mode: use lightweight health check instead of full reload
+
+        args:
+            force: bypass time-based throttling
+        """
+        with self._connection_lock:
+            now = datetime.utcnow()
+
+            # determine if we should refresh
+            should_refresh_now = force
+            if not should_refresh_now:
+                if self.connection_mode == "error":
+                    # always try to recover from error state
+                    should_refresh_now = True
+                elif self._last_connection_check is None:
+                    # first check after init
+                    should_refresh_now = True
+                else:
+                    # in stable mode, only refresh if enough time passed
+                    elapsed = (now - self._last_connection_check).total_seconds()
+                    should_refresh_now = elapsed >= 30
+
+            if not should_refresh_now:
+                return
+
+            # if already in api mode, try lightweight health check first
+            if self.connection_mode == "api" and self.api_url:
+                health = get_api_health_status(self.api_url)
+                if health:
+                    # api still healthy, no need to reload
+                    self._last_connection_check = now
+                    return
+                # api became unhealthy, fall through to full reload
+
+            # perform full connection refresh (may reload models from disk)
+            (
+                self.connection_mode,
+                self.api_url,
+                self.pipelines,
+            ) = get_prediction_service(
+                self._api_url, self._classification_model_path, self._survival_model_path
+            )
+            self._last_connection_check = now
 
     def snapshot(self) -> ConnectionSnapshot:
         """Return a serializable snapshot used by multiple endpoints."""
@@ -389,7 +432,7 @@ def create_app(
             }
 
         # re-check api connection before rejecting (api may have become available since startup)
-        state.refresh_connection()
+        state.refresh_connection(force=True)
         if state.connection_mode != "api" or not state.api_url:
             return {
                 "success": False,
