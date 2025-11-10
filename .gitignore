@@ -63,3 +63,4 @@ AGENTS.md
 # frontend
 ui-frontend/node_modules/
 ui-frontend/dist/
+!ui-frontend/src/lib/
