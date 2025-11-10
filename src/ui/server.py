@@ -436,7 +436,9 @@ def create_app(
             if region is not None:
                 payload["region_number"] = region
 
-            success, data, error = make_api_request(state.api_url, "/predict/classification", method="POST", json_data=payload)
+            success, data, error = make_api_request(
+                state.api_url, "/predict/classification", method="POST", json_data=payload
+            )
             if success and data:
                 prediction = data
             else:
@@ -524,7 +526,9 @@ def create_app(
             if region is not None:
                 payload["region_number"] = region
 
-            success, data, error = make_api_request(state.api_url, "/predict/survival", method="POST", json_data=payload)
+            success, data, error = make_api_request(
+                state.api_url, "/predict/survival", method="POST", json_data=payload
+            )
             if success and data:
                 prediction = data
             else:
@@ -641,9 +645,7 @@ def create_app(
                     }
                 )
 
-        status_message = (
-            f"Found {len(events)} flare events" if events else "No flares found in the specified range."
-        )
+        status_message = f"Found {len(events)} flare events" if events else "No flares found in the specified range."
 
         if request.force_refresh:
             state.record_refresh()
@@ -799,6 +801,7 @@ def create_app(
             if full_path.startswith("ui/api"):
                 raise HTTPException(status_code=404)
             return FileResponse(index_file)
+
     else:
 
         @app.get("/", include_in_schema=False)

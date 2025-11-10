@@ -93,7 +93,7 @@ services:
       - api
     command: ./scripts/docker_run_ui.sh
     ports:
-      - "${UI_PORT:-7860}:7860"
+      - "${UI_HOST_PORT:-7860}:${UI_PORT:-7860}"
     volumes:
       - ./ui-frontend/dist:/app/ui-frontend/dist:ro
 
