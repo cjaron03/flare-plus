@@ -40,7 +40,7 @@ flare+ implements short-term (24-48h) classification and time-to-event modeling 
   - input drift detection
   - outcome logging to database
 
-- **interactive ui**: gradio-based dashboard
+- **interactive ui**: svelte dashboard served via fastapi
   - real-time predictions (classification and survival)
   - historical flare event timeline with filters
   - system health monitoring
@@ -98,7 +98,8 @@ flare-plus/
 │   ├── features/       # feature engineering (complexity, trends, rolling stats)
 │   ├── models/         # ml models (classification and survival analysis)
 │   ├── api/            # flask api with monitoring and drift detection
-│   └── ui/             # gradio dashboard
+│   └── ui/             # ui backend services + helper utilities
+├── ui-frontend/        # svelte spa (vite build artifacts in dist/)
 ├── scripts/
 │   ├── run_ingestion.py              # data ingestion script
 │   ├── run_api_server.py             # api server
@@ -179,7 +180,15 @@ models can be supplied by dropping `*.joblib` artifacts into the `app_models` vo
 
 dashboard available at http://127.0.0.1:7860
 
-set `UI_HOST_PORT` or `UI_PORT` to customize host/container ports, `UI_API_URL` to point the dashboard at a different api endpoint, and `UI_SHARE=true` to request a public gradio share link. the ui container reuses the same model discovery rules as the api.
+build the svelte assets once before launching (or whenever you make frontend changes):
+
+```bash
+cd ui-frontend
+npm install
+npm run build
+```
+
+set `UI_HOST_PORT` or `UI_PORT` to customize host/container ports and `UI_API_URL` to point the dashboard at a different api endpoint. during local frontend development you can run `npm run dev` (set `VITE_UI_API_URL=http://127.0.0.1:7860/ui/api` to proxy to the python backend). docker-compose mounts `./ui-frontend/dist` into the container, so keep that folder up to date whenever you change frontend code.
 
 #### admin login
 

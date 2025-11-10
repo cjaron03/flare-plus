@@ -59,3 +59,7 @@ htmlcov/
 # agent files 
 CLAUDE.md
 AGENTS.md
+
+# frontend
+ui-frontend/node_modules/
+ui-frontend/dist/

@@ -68,7 +68,7 @@ case "$1" in
     ;;
   ui)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
-    echo "starting gradio ui dashboard (foreground)..."
+    echo "starting ui dashboard (fastapi + svelte, foreground)..."
     echo "dashboard will be available at http://127.0.0.1:${UI_HOST_PORT}"
     echo "press ctrl+c to stop (or use ./flare ui-stop)"
     docker-compose up ui
@@ -79,7 +79,7 @@ case "$1" in
     ;;
   ui-bg)
     UI_HOST_PORT="${UI_HOST_PORT:-7860}"
-    echo "starting gradio ui dashboard in background..."
+    echo "starting ui dashboard in background..."
     docker-compose up -d ui
     echo "dashboard running at http://127.0.0.1:${UI_HOST_PORT}"
     echo "use './flare ui-stop' to stop the service"
@@ -169,7 +169,7 @@ case "$1" in
     echo "  api-bg     start flask api service in background"
     echo "  api-stop   stop api service"
     echo "  api-logs   stream api logs"
-    echo "  ui         start gradio ui dashboard (foreground, default http://127.0.0.1:7860)"
+    echo "  ui         start ui dashboard (foreground, default http://127.0.0.1:7860)"
     echo "  ui-bg      start ui dashboard in background"
     echo "  ui-stop    stop ui dashboard"
     echo "  ui-logs    stream ui logs"
