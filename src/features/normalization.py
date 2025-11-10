@@ -217,10 +217,13 @@ def handle_missing_data(
 
     # drop non-numeric columns as they cannot be used by the model
     # machine learning models expect numeric features only
+    # preserve critical columns like 'timestamp' which are needed for downstream operations
+    preserved_cols = {"timestamp"}  # columns to preserve even if non-numeric
     non_numeric_cols = features_processed.select_dtypes(exclude=[np.number]).columns.tolist()
-    if non_numeric_cols:
-        logger.warning(f"dropping non-numeric columns (models require numeric features): {non_numeric_cols}")
-        features_processed = features_processed.drop(columns=non_numeric_cols)
+    cols_to_drop = [col for col in non_numeric_cols if col not in preserved_cols]
+    if cols_to_drop:
+        logger.warning(f"dropping non-numeric columns (models require numeric features): {cols_to_drop}")
+        features_processed = features_processed.drop(columns=cols_to_drop)
 
     return features_processed
 
