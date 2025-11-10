@@ -166,7 +166,7 @@ class UIState:
 
     def record_refresh(self):
         with self._refresh_lock:
-            self._last_refresh = datetime.now()
+            self._last_refresh = datetime.utcnow()
 
 
 # Helper utilities ---------------------------------------------------------------
@@ -200,7 +200,7 @@ def _throttle_message(last_refresh: Optional[datetime], min_minutes: int) -> str
     if last_refresh is None:
         return ""
 
-    elapsed = datetime.now() - last_refresh
+    elapsed = datetime.utcnow() - last_refresh
     if elapsed >= timedelta(minutes=min_minutes):
         return ""
 
@@ -379,7 +379,7 @@ def create_app(
                 summary = format_ingestion_summary(results)
                 duration = results.get("duration", 0.0)
                 status = results.get("overall_status", "success")
-                set_last_ingestion_time(datetime.now())
+                set_last_ingestion_time(datetime.utcnow())
                 return {
                     "success": True,
                     "message": f"Ingestion {status}. Duration: {duration:.1f}s",
@@ -422,7 +422,7 @@ def create_app(
                 },
             )
 
-        timestamp = request.timestamp or datetime.now()
+        timestamp = request.timestamp or datetime.utcnow()
         region = request.region_number
 
         prediction: Optional[Dict[str, Any]] = None
@@ -514,7 +514,7 @@ def create_app(
                 },
             )
 
-        timestamp = request.timestamp or datetime.now()
+        timestamp = request.timestamp or datetime.utcnow()
         region = request.region_number
         prediction: Optional[Dict[str, Any]] = None
 
@@ -605,8 +605,8 @@ def create_app(
                 },
             )
 
-        start = request.start or (datetime.now() - timedelta(days=30))
-        end = request.end or datetime.now()
+        start = request.start or (datetime.utcnow() - timedelta(days=30))
+        end = request.end or datetime.utcnow()
 
         if start >= end:
             return JSONResponse(
