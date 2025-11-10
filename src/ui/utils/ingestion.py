@@ -96,7 +96,7 @@ def can_trigger_ingestion() -> Tuple[bool, str]:
     if _last_ingestion_time is None:
         return True, ""
 
-    time_since_last = (datetime.now() - _last_ingestion_time).total_seconds()
+    time_since_last = (datetime.utcnow() - _last_ingestion_time).total_seconds()
 
     if time_since_last < MIN_INGESTION_INTERVAL:
         minutes_ago = int(time_since_last / 60)
@@ -169,7 +169,7 @@ def get_rate_limit_message(last_time: Optional[datetime]) -> str:
     if last_time is None:
         return ""
 
-    time_since = (datetime.now() - last_time).total_seconds()
+    time_since = (datetime.utcnow() - last_time).total_seconds()
     minutes_ago = int(time_since / 60)
     minutes_remaining = max(0, int((MIN_INGESTION_INTERVAL - time_since) / 60))
 

@@ -1,4 +1,4 @@
-"""run gradio ui dashboard."""
+"""Run the Svelte dashboard backend (FastAPI + static assets)."""
 
 import argparse
 import logging
@@ -9,7 +9,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ui.dashboard import create_dashboard  # noqa: E402
+import uvicorn  # noqa: E402
+
+from src.ui.server import create_app  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     """main entry point for ui server."""
-    parser = argparse.ArgumentParser(description="run gradio ui dashboard")
+    parser = argparse.ArgumentParser(description="run the Svelte dashboard backend")
     parser.add_argument(
         "--api-url",
         type=str,
@@ -50,35 +52,37 @@ def main():
         help="host to bind to (default: 127.0.0.1)",
     )
     parser.add_argument(
-        "--share",
-        action="store_true",
-        help="create public gradio share link",
+        "--static-dir",
+        type=str,
+        default=str(PROJECT_ROOT / "ui-frontend" / "dist"),
+        help="path to compiled svelte build (default: ui-frontend/dist)",
     )
 
     args = parser.parse_args()
 
-    logger.info("initializing dashboard...")
+    logger.info("initializing dashboard backend...")
     logger.info(f"api url: {args.api_url}")
+    logger.info(f"static dir: {args.static_dir}")
     if args.classification_model:
         logger.info(f"classification model: {args.classification_model}")
     if args.survival_model:
         logger.info(f"survival model: {args.survival_model}")
 
-    # create dashboard
-    dashboard = create_dashboard(
+    app = create_app(
         api_url=args.api_url,
         classification_model_path=args.classification_model,
         survival_model_path=args.survival_model,
+        static_dir=Path(args.static_dir),
     )
 
-    # launch
-    # bind to 0.0.0.0 when running in docker to allow external access
     bind_host = "0.0.0.0" if args.host == "127.0.0.1" else args.host  # nosec B104
-    logger.info(f"launching dashboard on {bind_host}:{args.port}")
-    dashboard.launch(
-        server_name=bind_host,
-        server_port=args.port,
-        share=args.share,
+    logger.info(f"launching fastapi server on {bind_host}:{args.port}")
+
+    uvicorn.run(
+        app,
+        host=bind_host,
+        port=args.port,
+        log_level="info",
     )
 
 

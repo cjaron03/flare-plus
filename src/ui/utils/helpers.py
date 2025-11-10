@@ -158,7 +158,7 @@ def should_refresh(last_refresh: Optional[datetime], min_interval_minutes: int =
     if last_refresh is None:
         return True
 
-    time_since_refresh = datetime.now() - last_refresh
+    time_since_refresh = datetime.utcnow() - last_refresh
     return time_since_refresh > timedelta(minutes=min_interval_minutes)
 
 

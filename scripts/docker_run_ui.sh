@@ -5,7 +5,7 @@ set -eu
 API_URL="${API_URL:-http://api:5000}"
 HOST="${UI_HOST:-0.0.0.0}"
 PORT="${UI_PORT:-7860}"
-SHARE="${UI_SHARE:-false}"
+STATIC_DIR="${UI_STATIC_DIR:-/app/ui-frontend/dist}"
 
 if [ -n "${CLASSIFICATION_MODEL_PATH:-}" ]; then
   CLASS_MODEL="${CLASSIFICATION_MODEL_PATH}"
@@ -33,16 +33,16 @@ if [ -n "${SURV_MODEL}" ]; then
   SURV_ARG="--survival-model ${SURV_MODEL}"
 fi
 
-SHARE_FLAG=""
-if [ "${SHARE}" = "true" ] || [ "${SHARE}" = "1" ]; then
-  SHARE_FLAG="--share"
+if [ ! -d "${STATIC_DIR}" ]; then
+  echo "warning: svelte build not found at ${STATIC_DIR}"
+  echo "run 'npm install && npm run build' inside ui-frontend/ on the host and re-run ./flare ui"
 fi
 
-echo "starting ui dashboard on ${HOST}:${PORT} (api=${API_URL})"
+echo "starting ui dashboard on ${HOST}:${PORT} (api=${API_URL}, static=${STATIC_DIR})"
 exec python scripts/run_ui.py \
   --api-url "${API_URL}" \
   --host "${HOST}" \
   --port "${PORT}" \
-  ${SHARE_FLAG} \
+  --static-dir "${STATIC_DIR}" \
   ${CLASS_ARG} \
   ${SURV_ARG}

@@ -78,7 +78,7 @@ services:
       - "${API_HOST_PORT:-5001}:${API_PORT:-5000}"
     restart: unless-stopped
 
-  # gradio dashboard for monitoring + operations
+  # svelte + fastapi dashboard for monitoring + operations
   ui:
     <<: *app-base
     container_name: flare-plus-ui
@@ -87,14 +87,21 @@ services:
       API_URL: ${UI_API_URL:-http://api:5000}
       UI_HOST: ${UI_HOST:-0.0.0.0}
       UI_PORT: ${UI_PORT:-7860}
-      UI_SHARE: ${UI_SHARE:-false}
       CLASSIFICATION_MODEL_PATH: ${CLASSIFICATION_MODEL_PATH:-}
       SURVIVAL_MODEL_PATH: ${SURVIVAL_MODEL_PATH:-}
     depends_on:
       - api
     command: ./scripts/docker_run_ui.sh
     ports:
-      - "${UI_PORT:-7860}:7860"
+      - "${UI_HOST_PORT:-7860}:${UI_PORT:-7860}"
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config.yaml:/app/config.yaml
+      - ./scripts:/app/scripts
+      - app_data:/app/data
+      - app_models:/app/models
+      - ./ui-frontend/dist:/app/ui-frontend/dist:ro
 
   # one-off ingestion runner (used by ./flare ingest)
   ingestion:
