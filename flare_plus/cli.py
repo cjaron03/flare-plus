@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -40,7 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
     ingest = subparsers.add_parser("ingest-donki-flares", help="Ingest solar flares from NASA DONKI")
     ingest.add_argument("--start", required=True, help="Start date YYYY-MM-DD (e.g., 2010-01-01)")
     ingest.add_argument("--end", help="End date YYYY-MM-DD (defaults to today)")
-    ingest.add_argument("--api-key", default="DEMO_KEY", help="NASA API key (default DEMO_KEY)")
+    ingest.add_argument(
+        "--api-key",
+        default=os.getenv("NASA_API_KEY", "DEMO_KEY"),
+        help="NASA API key (defaults to NASA_API_KEY env var or DEMO_KEY)",
+    )
     ingest.add_argument(
         "--chunk-days",
         type=int,

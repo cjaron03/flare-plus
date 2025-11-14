@@ -6,7 +6,8 @@ data_ingestion:
   backfill_start_date: "2023-01-01"
   
   # nasa donki api key (get free key at https://api.nasa.gov/)
-  nasa_api_key: "meROsUzFBf0mcweCaNK1lzLHArvgH27yuvxOKKrp"
+  # set via NASA_API_KEY environment variable (falls back to DEMO_KEY for docs/testing)
+  # nasa_api_key: "set via NASA_API_KEY env var"
   
   # noaa/swpc public endpoints
   endpoints:

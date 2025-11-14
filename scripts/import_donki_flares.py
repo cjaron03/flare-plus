@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import CONFIG  # noqa: E402
+from src.config import DataConfig  # noqa: E402
 from src.data.database import get_database  # noqa: E402
 from src.data.donki_fetcher import DonkiFetcher  # noqa: E402
 from src.data.schema import FlareEvent  # noqa: E402
@@ -186,8 +186,8 @@ def main():
         # default to 2 years ago
         start_date = end_date.replace(year=end_date.year - 2)
 
-    # get api key from args, config, or default to DEMO_KEY
-    api_key = args.api_key or CONFIG.get("data_ingestion", {}).get("nasa_api_key") or "DEMO_KEY"
+    # get api key from args, environment variable, or default to DEMO_KEY
+    api_key = args.api_key or DataConfig.NASA_API_KEY
 
     import_donki_flares(start_date, end_date, api_key)
 

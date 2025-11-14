@@ -82,7 +82,7 @@ ADMIN_UI_ATTEMPT_WINDOW=300  # seconds
 ADMIN_UI_LOCKOUT_SECONDS=600
 
 # NASA DONKI API (optional, for historical flare import)
-NASA_API_KEY=DEMO_KEY        # Get free key at https://api.nasa.gov/
+NASA_API_KEY=DEMO_KEY        # Get free key at https://api.nasa.gov/ (required for DONKI ingestion)
 ```
 
 ### Docker Compose Environment Variables
@@ -257,8 +257,12 @@ Import historical flares from NASA DONKI:
 # Import specific date range
 ./flare import-donki 2023-01-01 2024-12-31
 
-# With custom API key
+# With custom API key (or set NASA_API_KEY env var)
 ./flare import-donki 2023-01-01 2024-12-31 your_nasa_api_key
+
+# Or set environment variable (recommended)
+export NASA_API_KEY=your_nasa_api_key_here
+./flare import-donki 2023-01-01 2024-12-31
 ```
 
 ## Troubleshooting

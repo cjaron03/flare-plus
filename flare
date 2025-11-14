@@ -390,7 +390,7 @@ case "$1" in
   import-donki)
     START_DATE="${2:-}"
     END_DATE="${3:-}"
-    API_KEY="${4:-DEMO_KEY}"
+    API_KEY="${4:-${NASA_API_KEY:-DEMO_KEY}}"
     
     print_header "Import DONKI Historical Flares"
     
