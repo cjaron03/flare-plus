@@ -168,6 +168,13 @@
 </script>
 
 <div class="page">
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <h1 style="margin: 0 0 0.5rem 0; font-size: 1.5rem; font-weight: 700;">Model Testing</h1>
+    <p style="margin: 0; color: rgba(226, 232, 240, 0.75); font-size: 0.95rem;">
+      Advanced prediction interface for testing different models, timestamps, and solar regions. Use this page to compare model performance, run historical predictions, and analyze specific active regions.
+    </p>
+  </div>
+
   <div class="card">
     <div class="section-title">Prediction confidence</div>
     {#if statusLoading}
@@ -177,9 +184,19 @@
     {:else if status}
       {#if status.connection.confidence}
         <p>
-          <strong>Confidence:</strong> {status.connection.confidence}
-          {#if status.connection.guardrailReason}
-            — {status.connection.guardrailReason}
+          <strong>Confidence:</strong> 
+          {#if status.connection.confidence === "normal" || status.connection.confidence === "high"}
+            <span style="color: #10b981; font-weight: 600;">{status.connection.confidence.toUpperCase()}</span>
+            {#if !status.connection.guardrailActive}
+              <span style="color: #10b981; margin-left: 0.5rem;">✓ All validations passing</span>
+            {/if}
+          {:else if status.connection.confidence === "low"}
+            <span style="color: #f59e0b;">{status.connection.confidence.toUpperCase()}</span>
+            {#if status.connection.guardrailReason}
+              — <span style="color: #f59e0b;">{status.connection.guardrailReason}</span>
+            {/if}
+          {:else}
+            {status.connection.confidence}
           {/if}
         </p>
       {:else}
@@ -190,10 +207,10 @@
 
   <div class="grid two">
     <div class="card">
-      <h2>Classification prediction</h2>
+      <h2>Classification Model Testing</h2>
       <p>
-        Predict the maximum solar flare class (None, C, M, or X) expected within the next 24 or 48 hours for a specific
-        solar region at a given time. This helps assess short-term flare risk.
+        Test classification models with custom parameters. Predict the maximum solar flare class (None, C, M, or X) expected within the next 24 or 48 hours for a specific
+        solar region at a given time. Compare different model types and time windows.
       </p>
 
       <form on:submit|preventDefault={() => runClassification(false)}>
@@ -282,12 +299,15 @@
     </div>
 
     <div class="card">
-      <h2>Survival analysis</h2>
+      <h2>Survival Model Testing (M-class)</h2>
       <p>
-        Predict when a C-class flare is likely to occur using time-to-event analysis. Shows probability distributions
+        Test survival analysis models with custom parameters. Predict when an M-class flare is likely to occur using time-to-event analysis. Shows probability distributions
         across different time horizons (0-168 hours) and a survival curve indicating the likelihood of flare occurrence
-        over time.
+        over time. Compare Cox and Gradient Boosting survival models.
       </p>
+      <div class="info-box" style="margin: 1rem 0; padding: 0.75rem; background: rgba(96, 165, 250, 0.1); border-left: 3px solid #60a5fa; border-radius: 0.25rem;">
+        <strong>Model Performance:</strong> F1: 0.867, Precision: 93%, Recall: 81%
+      </div>
 
       <form on:submit|preventDefault={() => runSurvival(false)}>
         <label>

@@ -114,13 +114,14 @@ class InputDriftDetector:
                 else:
                     raise ValueError(f"unknown method: {method}")
 
+                drift_detected = bool(p_value < alpha)
                 drift_results["all_tests"][col] = {
                     "statistic": float(statistic),
                     "p_value": float(p_value),
-                    "drift_detected": p_value < alpha,
+                    "drift_detected": drift_detected,
                 }
 
-                if p_value < alpha:
+                if drift_detected:
                     drift_results["drifted_features"].append(col)
                     drift_results["overall_drift"] = True
 

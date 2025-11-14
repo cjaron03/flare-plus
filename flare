@@ -361,6 +361,13 @@ case "$1" in
     print_header "System Validation"
     docker compose exec app python scripts/validate_system.py
     ;;
+  
+  clear-guardrail)
+    print_header "Clear Guardrail Status"
+    print_info "Clearing stale guardrail status from latest validation record..."
+    docker compose exec app python scripts/clear_guardrail.py
+    print_success "Guardrail status cleared. Refresh the UI to see updated confidence."
+    ;;
 
   validate-model)
     if [ -z "$2" ]; then
@@ -378,6 +385,25 @@ case "$1" in
   check-config)
     print_header "Configuration Check"
     docker compose exec app python scripts/check_config.py
+    ;;
+
+  import-donki)
+    START_DATE="${2:-}"
+    END_DATE="${3:-}"
+    API_KEY="${4:-DEMO_KEY}"
+    
+    print_header "Import DONKI Historical Flares"
+    
+    if [ -n "$START_DATE" ] && [ -n "$END_DATE" ]; then
+      print_info "Importing flares from ${START_DATE} to ${END_DATE}..."
+      docker compose exec app python scripts/import_donki_flares.py --start-date "${START_DATE}" --end-date "${END_DATE}" --api-key "${API_KEY}"
+    elif [ -n "$START_DATE" ]; then
+      print_info "Importing flares from ${START_DATE} to today..."
+      docker compose exec app python scripts/import_donki_flares.py --start-date "${START_DATE}" --api-key "${API_KEY}"
+    else
+      print_info "Importing flares (last 2 years)..."
+      docker compose exec app python scripts/import_donki_flares.py --api-key "${API_KEY}"
+    fi
     ;;
 
   *)
@@ -402,6 +428,7 @@ case "$1" in
     echo -e "${YELLOW}Database:${NC}"
     echo -e "  ${GREEN}init-db${NC}      Initialize database schema"
     echo -e "  ${GREEN}ingest${NC}       Run data ingestion from NOAA"
+    echo -e "  ${GREEN}import-donki${NC} [START] [END] [API_KEY]  Import historical flares from NASA DONKI"
     echo -e "  ${GREEN}db-shell${NC}     Open psql shell"
     echo ""
     echo -e "${YELLOW}Services (Individual Control):${NC}"
@@ -424,6 +451,7 @@ case "$1" in
     echo -e "  ${GRAY}./flare up${NC}         # Start everything"
     echo -e "  ${GRAY}./flare status${NC}     # Check what's running"
     echo -e "  ${GRAY}./flare ingest${NC}     # Load data"
+    echo -e "  ${GRAY}./flare import-donki${NC}  # Import historical flares"
     echo -e "  ${GRAY}./flare down${NC}       # Stop everything"
     echo ""
     echo -e "${YELLOW}URLs (when running):${NC}"

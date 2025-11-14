@@ -149,6 +149,22 @@ ingestion fetches:
 - automatically detects flare events from flux data
  - retries transient failures and respects caching windows (default 48h)
 
+#### donki solar flare ingestion
+
+NASA's DONKI API exposes historical flare catalogs (FLR endpoint). Use the new CLI helper to backfill or refresh the canonical `solar_flare_events` table with idempotent upserts:
+
+```bash
+python -m flare_plus.cli ingest-donki-flares --start 2010-01-01 --end 2010-02-01 --api-key "$NASA_API_KEY"
+```
+
+The command:
+- walks the requested window in ≤30-day chunks to stay within DONKI limits
+- normalizes timestamps/classType/region metadata into UTC
+- stores raw payloads plus instrument/linkage arrays for traceability
+- enforces uniqueness on `(external_id, source)` so re-runs are safe
+
+All rows land in the new `solar_flare_events` table, which you can join against existing region/flux data for labeling experiments.
+
 ### model serving (api)
 
 ```bash
