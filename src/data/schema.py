@@ -239,7 +239,7 @@ class SolarFlareEvent(Base):  # type: ignore[misc,valid-type]
 
     # timing
     begin_time = Column(DateTime, nullable=True, index=True)
-    peak_time = Column(DateTime, nullable=True, index=True)
+    peak_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True, index=True)
 
     # classification and metadata
