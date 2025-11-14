@@ -428,12 +428,20 @@ class ClassificationPipeline:
 
         # decode prediction
         predicted_class = label_encoder.inverse_transform([y_pred])[0]
-        class_probs = dict(zip(label_encoder.classes_, y_prob))
+
+        # convert numpy types to native Python types for JSON serialization
+        class_probs = {}
+        for class_name, prob in zip(label_encoder.classes_, y_prob):
+            # convert numpy types to native Python types
+            if hasattr(prob, 'item'):
+                class_probs[str(class_name)] = float(prob.item())
+            else:
+                class_probs[str(class_name)] = float(prob)
 
         return {
             "timestamp": timestamp,
             "window_hours": window,
-            "predicted_class": predicted_class,
+            "predicted_class": str(predicted_class),
             "class_probabilities": class_probs,
             "model_type": model_type,
         }

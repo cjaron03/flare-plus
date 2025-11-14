@@ -299,7 +299,7 @@ def _serialize_survival_result(prediction: Dict[str, Any]) -> Dict[str, Any]:
         "orderedBuckets": [item[0] for item in ordered],
         "orderedValues": [round(item[1] * 100, 2) for item in ordered],
         "survivalCurve": prediction.get("survival_function", {}),
-        "targetClass": prediction.get("target_flare_class", "C"),
+        "targetClass": prediction.get("target_flare_class", "M"),
         "hazardScore": prediction.get("hazard_score"),
     }
 
@@ -696,7 +696,18 @@ def create_app(
 
         events: List[Dict[str, Any]] = []
         if not flares_df.empty:
+            import pandas as pd
+
             for _, row in flares_df.iterrows():
+                # Handle NaN values (convert to None for JSON serialization)
+                class_magnitude = row.get("class_magnitude")
+                if pd.isna(class_magnitude):
+                    class_magnitude = None
+
+                active_region = row.get("active_region")
+                if pd.isna(active_region):
+                    active_region = None
+
                 events.append(
                     {
                         "startTime": row.get("start_time").isoformat() if row.get("start_time") is not None else None,
@@ -704,8 +715,8 @@ def create_app(
                         "endTime": row.get("end_time").isoformat() if row.get("end_time") is not None else None,
                         "flareClass": row.get("flare_class"),
                         "classCategory": row.get("class_category"),
-                        "classMagnitude": row.get("class_magnitude"),
-                        "region": row.get("active_region"),
+                        "classMagnitude": class_magnitude,
+                        "region": int(active_region) if active_region is not None else None,
                         "location": row.get("location"),
                         "source": row.get("source"),
                     }

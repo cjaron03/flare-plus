@@ -220,3 +220,46 @@ class SystemValidationLog(Base):  # type: ignore[misc,valid-type]
             f"<SystemValidationLog(validation_type={self.validation_type}, status={self.status}, "
             f"guardrail_triggered={self.guardrail_triggered}, run_timestamp={self.run_timestamp})>"
         )
+
+
+class SolarFlareEvent(Base):  # type: ignore[misc,valid-type]
+    """Solar flare events from external sources (e.g., NASA DONKI).
+
+    Stores raw payload for traceability and has a uniqueness constraint on
+    (external_id, source) to support idempotent upserts.
+    """
+
+    __tablename__ = "solar_flare_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # identity and source
+    external_id = Column(String(100), nullable=False, index=True)
+    source = Column(String(50), nullable=False, index=True)
+
+    # timing
+    begin_time = Column(DateTime, nullable=True, index=True)
+    peak_time = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True, index=True)
+
+    # classification and metadata
+    class_type = Column(String(10), nullable=True)  # e.g., C1.2, M5.5, X2.1
+    source_location = Column(String(50), nullable=True)  # e.g., N15E30
+    active_region_num = Column(Integer, nullable=True)
+
+    # json-like payloads stored as text for portability
+    instruments = Column(Text, nullable=True)  # JSON string list
+    linked_events = Column(Text, nullable=True)  # JSON string list
+    raw_payload = Column(Text, nullable=True)  # full event payload JSON
+
+    # audit
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("external_id", "source", name="uq_solar_flare_events_ext_source"),
+        Index("ix_solar_flare_events_peak_time", "peak_time"),
+    )
+
+    def __repr__(self):
+        return f"<SolarFlareEvent(external_id={self.external_id}, source={self.source}, peak_time={self.peak_time})>"

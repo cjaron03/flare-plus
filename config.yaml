@@ -5,6 +5,10 @@ data_ingestion:
   update_interval_minutes: 60
   backfill_start_date: "2023-01-01"
   
+  # nasa donki api key (get free key at https://api.nasa.gov/)
+  # set via NASA_API_KEY environment variable (falls back to DEMO_KEY for docs/testing)
+  # nasa_api_key: "set via NASA_API_KEY env var"
+  
   # noaa/swpc public endpoints
   endpoints:
     goes_xrs_7day: "https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json"

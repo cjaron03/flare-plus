@@ -38,4 +38,9 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["plotly.js-dist-min"],
   },
+  resolve: {
+    alias: {
+      "plotly.js-dist-min": "plotly.js-dist-min/plotly.min.js",
+    },
+  },
 });

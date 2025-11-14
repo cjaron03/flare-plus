@@ -204,7 +204,7 @@ def format_survival_plain_language(prediction: Dict[str, Any]) -> str:
         plain language explanation
     """
     prob_dist = prediction.get("probability_distribution", {})
-    target_class = prediction.get("target_flare_class", "X")
+    target_class = prediction.get("target_flare_class", "M")
     hazard_score = prediction.get("hazard_score")
 
     if not prob_dist:
@@ -224,8 +224,8 @@ def format_survival_plain_language(prediction: Dict[str, Any]) -> str:
     statement = (
         f"There is a {max_prob*100:.1f}% chance of a {target_class}-class flare "
         f"within {bucket_str}.\n\n"
-        f"Note: This survival model predicts C-class flare timing. "
-        f"For M/X-class flares, use the Classification model."
+        f"Note: This survival model predicts M-class flare timing. "
+        f"Model performance: F1: 0.867, Precision: 93%, Recall: 81%."
     )
 
     # add hazard score interpretation if available

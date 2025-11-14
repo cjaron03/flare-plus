@@ -94,6 +94,9 @@ class DataConfig:
     BACKFILL_START = os.getenv("BACKFILL_START_DATE", CONFIG["data_ingestion"]["backfill_start_date"])
     UPDATE_INTERVAL = int(os.getenv("UPDATE_INTERVAL_MINUTES", CONFIG["data_ingestion"]["update_interval_minutes"]))
 
+    # nasa api key from environment variable (fallback to DEMO_KEY for docs/testing)
+    NASA_API_KEY = os.getenv("NASA_API_KEY", "DEMO_KEY")
+
     # endpoints from config
     ENDPOINTS = CONFIG["data_ingestion"]["endpoints"]
 
