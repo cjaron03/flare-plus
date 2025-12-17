@@ -203,11 +203,14 @@ def create_app(
             if window not in [24, 48]:
                 return jsonify({"error": "window must be 24 or 48"}), 400
 
+            include_explanation = data.get("include_explanation", False)
+
             result = service.predict_classification(
                 timestamp=timestamp,
                 window=window,
                 model_type=model_type,
                 region_number=region_number,
+                include_explanation=include_explanation,
             )
 
             return jsonify(result), 200
@@ -250,11 +253,14 @@ def create_app(
             if model_type not in ["cox", "gb"]:
                 return jsonify({"error": "model_type must be 'cox' or 'gb'"}), 400
 
+            include_explanation = data.get("include_explanation", False)
+
             result = service.predict_survival(
                 timestamp=timestamp,
                 model_type=model_type,
                 region_number=region_number,
                 time_buckets=time_buckets,
+                include_explanation=include_explanation,
             )
 
             return jsonify(result), 200

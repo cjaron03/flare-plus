@@ -72,6 +72,7 @@ class ClassificationRequest(BaseModel):
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="gradient_boosting", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+    include_explanation: bool = Field(default=False, alias="includeExplanation")
 
     @field_validator("window")
     @classmethod
@@ -294,7 +295,7 @@ def _serialize_classification_result(prediction: Dict[str, Any], window: int) ->
     labels = [item[0] for item in ordered]
     values = [round(item[1] * 100, 2) for item in ordered]
 
-    return {
+    result = {
         "predictedClass": prediction.get("predicted_class", "Unknown"),
         "windowHours": prediction.get("window_hours", window),
         "probabilities": class_probs,
@@ -302,6 +303,13 @@ def _serialize_classification_result(prediction: Dict[str, Any], window: int) ->
         "orderedValues": values,
         "text": format_classification_prediction(prediction),
     }
+
+    # include SHAP explanation if present
+    explanation = prediction.get("explanation")
+    if explanation:
+        result["explanation"] = explanation
+
+    return result
 
 
 def _serialize_survival_result(prediction: Dict[str, Any]) -> Dict[str, Any]:
@@ -515,6 +523,7 @@ def create_app(
                 "timestamp": timestamp.isoformat(),
                 "window": int(request.window),  # ensure integer type
                 "model_type": request.model_type,
+                "include_explanation": request.include_explanation,
             }
             if region is not None:
                 payload["region_number"] = region
@@ -548,6 +557,7 @@ def create_app(
                     window=request.window,
                     model_type=request.model_type,
                     region_number=region,
+                    include_explanation=request.include_explanation,
                 )
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.exception("Classification prediction failed")

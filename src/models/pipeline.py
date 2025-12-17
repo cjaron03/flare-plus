@@ -393,6 +393,7 @@ class ClassificationPipeline:
         window: int,
         model_type: str = "gradient_boosting",
         region_number: Optional[int] = None,
+        include_explanation: bool = False,
     ) -> Dict[str, Any]:
         """
         make prediction for a given timestamp.
@@ -402,6 +403,7 @@ class ClassificationPipeline:
             window: prediction window in hours (24 or 48)
             model_type: model type to use ('logistic' or 'gradient_boosting')
             region_number: optional region number to filter by
+            include_explanation: whether to include SHAP explanation
 
         returns:
             dict with prediction results
@@ -460,12 +462,33 @@ class ClassificationPipeline:
             else:
                 class_probs[str(class_name)] = float(prob)
 
-        return {
+        result = {
             "timestamp": timestamp,
             "window_hours": window,
             "predicted_class": str(predicted_class),
             "class_probabilities": class_probs,
             "model_type": model_type,
         }
+
+        # add SHAP explanation if requested
+        if include_explanation:
+            try:
+                from src.api.explainer import get_explainer
+
+                explainer = get_explainer()
+                explanation = explainer.explain_classification(
+                    model=model,
+                    X=X,
+                    feature_names=feature_names,
+                    label_encoder=label_encoder,
+                    model_type=model_type,
+                    window=window,
+                )
+                result["explanation"] = explanation
+            except Exception as e:
+                logger.warning(f"failed to compute SHAP explanation: {e}")
+                result["explanation"] = {"error": str(e)}
+
+        return result
 
 # fmt: on
