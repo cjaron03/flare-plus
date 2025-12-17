@@ -70,6 +70,21 @@ def _get_default_config() -> Dict[str, Any]:
 CONFIG = load_config()
 
 
+def mlflow_enabled_from_config() -> bool:
+    """Return mlflow enabled flag from config/env (defaults to True).
+
+    Env override: MLFLOW_ENABLED=0|false disables tracking regardless of config.
+    """
+    from os import getenv
+
+    env_override = getenv("MLFLOW_ENABLED")
+    if env_override is not None:
+        return env_override.lower() not in {"0", "false", "no"}
+
+    mlflow_cfg = CONFIG.get("mlflow", {}) or {}
+    return bool(mlflow_cfg.get("enabled", True))
+
+
 class DatabaseConfig:
     """database connection configuration."""
 

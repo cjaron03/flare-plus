@@ -83,6 +83,10 @@ ADMIN_UI_LOCKOUT_SECONDS=600
 
 # NASA DONKI API (optional, for historical flare import)
 NASA_API_KEY=DEMO_KEY        # Get free key at https://api.nasa.gov/ (required for DONKI ingestion)
+
+# Error Monitoring (optional)
+SENTRY_DSN=                  # Sentry DSN for error tracking (get from https://sentry.io)
+ENVIRONMENT=development      # Environment name (development, staging, production)
 ```
 
 ### Docker Compose Environment Variables

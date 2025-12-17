@@ -95,6 +95,7 @@ def train_model(
     region_number: int = None,
     models: list = None,
     save_path: str = None,
+    use_mlflow: bool = True,
 ) -> ClassificationPipeline:
     """
     train classification model.
@@ -113,7 +114,7 @@ def train_model(
     if models is None:
         models = ["logistic", "gradient_boosting"]
 
-    pipeline = ClassificationPipeline()
+    pipeline = ClassificationPipeline(use_mlflow=use_mlflow)
 
     logger.info(f"preparing dataset from {start_date.date()} to {end_date.date()}...")
     dataset = pipeline.prepare_dataset(
@@ -284,6 +285,11 @@ def main():
         type=str,
         help="load trained model from file (joblib format)",
     )
+    parser.add_argument(
+        "--no-mlflow",
+        action="store_true",
+        help="disable mlflow tracking (helpful on macOS Docker volumes)",
+    )
 
     args = parser.parse_args()
 
@@ -295,6 +301,8 @@ def main():
     start_date = end_date - timedelta(days=90)
     if args.start_date:
         start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+
+    use_mlflow = not args.no_mlflow
 
     # train model
     if args.train:
@@ -323,6 +331,7 @@ def main():
             region_number=args.region,
             models=args.train_models,
             save_path=args.save_model,
+            use_mlflow=use_mlflow,
         )
 
         logger.info("training completed successfully!")
@@ -344,7 +353,7 @@ def main():
         logger.info(f"loading model from {args.load_model}...")
         model_data = joblib.load(args.load_model)
 
-        pipeline = ClassificationPipeline()
+        pipeline = ClassificationPipeline(use_mlflow=use_mlflow)
         pipeline.models = model_data.get("models", {})
         pipeline.evaluation_results = model_data.get("evaluation_results", {})
 

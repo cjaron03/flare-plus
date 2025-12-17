@@ -21,7 +21,7 @@ from src.config import CONFIG
 from src.models.survival_labeling import SurvivalLabeler
 from src.models.time_varying_covariates import TimeVaryingCovariateEngineer
 from src.models.survival_models import CoxProportionalHazards, GradientBoostingSurvival
-from src.ml.experiment_tracking import MLflowTracker
+from src.ml.experiment_tracking import MLflowTracker, mlflow_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class SurvivalAnalysisPipeline:
         gb_n_estimators: int = 100,
         gb_learning_rate: float = 0.1,
         random_state: Optional[int] = None,
-        use_mlflow: bool = True,
+        use_mlflow: Optional[bool] = None,
     ):
         """
         initialize survival analysis pipeline.
@@ -50,7 +50,7 @@ class SurvivalAnalysisPipeline:
             max_time_hours: maximum observation time (censoring window)
             cox_penalizer: l2 penalty for cox model
             gb_n_estimators: number of trees for gradient boosting
-            use_mlflow: whether to use mlflow tracking
+            use_mlflow: whether to use mlflow tracking (None -> auto from config/env)
             gb_learning_rate: learning rate for gradient boosting
             random_state: random seed
         """
@@ -65,8 +65,9 @@ class SurvivalAnalysisPipeline:
 
         self.target_flare_class = target_flare_class
         self.max_time_hours = max_time_hours
-        self.use_mlflow = use_mlflow
-        self.mlflow_tracker = MLflowTracker() if use_mlflow else None
+        resolved_use_mlflow = mlflow_enabled() if use_mlflow is None else use_mlflow
+        self.use_mlflow = resolved_use_mlflow
+        self.mlflow_tracker = MLflowTracker() if resolved_use_mlflow else None
         self.is_fitted = False
 
     def prepare_dataset(
@@ -185,12 +186,6 @@ class SurvivalAnalysisPipeline:
         results["test_size"] = len(test_df)
 
         logger.info(f"train size: {len(train_df)}, test size: {len(test_df)}")
-        event_rate_train = float(train_df["event"].mean()) if len(train_df) > 0 else 0.0
-        event_rate_test = float(test_df["event"].mean()) if len(test_df) > 0 else 0.0
-        base_tags = {
-            "pipeline": "survival",
-            "target_flare_class": self.target_flare_class,
-        }
 
         # train cox ph model
         if "cox" in models:

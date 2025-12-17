@@ -3,7 +3,7 @@
 
 import logging
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 import numpy as np
@@ -29,6 +29,13 @@ MAX_TIME_HOURS = SURVIVAL_CONFIG.get("max_time_hours", 168)  # 7 days max observ
 TIME_BUCKETS = SURVIVAL_CONFIG.get("time_buckets", [0, 6, 12, 24, 48, 72, 96, 120, 168])  # hours
 
 
+def _normalize_timestamp(ts: datetime) -> datetime:
+    """ensure timestamps are timezone-naive for pandas compatibility."""
+    if ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
+
+
 class SurvivalLabeler:
     """creates time-to-event labels for survival analysis."""
 
@@ -45,10 +52,61 @@ class SurvivalLabeler:
         self.max_time_hours = max_time_hours
         self.time_buckets = TIME_BUCKETS
 
+    def _load_target_flares(
+        self,
+        timestamps: List[datetime],
+        region_number: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """bulk load flares within the observation window for given timestamps."""
+        if not timestamps:
+            return pd.DataFrame()
+
+        normalized_timestamps = [_normalize_timestamp(ts) for ts in timestamps]
+        min_timestamp = min(normalized_timestamps)
+        max_timestamp = max(normalized_timestamps)
+        range_end = max_timestamp + timedelta(hours=self.max_time_hours)
+
+        try:
+            with self.db.get_session() as session:
+                query = (
+                    session.query(FlareEvent)
+                    .filter(
+                        FlareEvent.start_time > min_timestamp,
+                        FlareEvent.start_time <= range_end,
+                        FlareEvent.class_category == self.target_flare_class,
+                    )
+                    .order_by(FlareEvent.start_time)
+                )
+                if region_number is not None:
+                    query = query.filter(FlareEvent.active_region == region_number)
+
+                records = query.all()
+
+                # extract attributes while session is still open to avoid DetachedInstanceError
+                flares_df = pd.DataFrame(
+                    [
+                        {
+                            "start_time": _normalize_timestamp(r.start_time),
+                            "active_region": r.active_region,
+                        }
+                        for r in records
+                    ]
+                )
+        except Exception as e:
+            logger.error(f"error bulk loading target flares: {e}")
+            return pd.DataFrame()
+
+        if len(flares_df) == 0:
+            return pd.DataFrame()
+
+        flares_df = flares_df.sort_values("start_time").reset_index(drop=True)
+        return flares_df
+
     def find_next_flare_time(
         self,
         timestamp: datetime,
         region_number: Optional[int] = None,
+        preloaded_flares: Optional[pd.DataFrame] = None,
     ) -> Optional[datetime]:
         """
         find the time of the next target flare class after the given timestamp.
@@ -61,6 +119,22 @@ class SurvivalLabeler:
             datetime of next flare, or None if none found within max_time_hours
         """
         try:
+            if preloaded_flares is not None and len(preloaded_flares) > 0:
+                flares_df = preloaded_flares
+                mask = flares_df["start_time"] > timestamp
+                if region_number is not None and "active_region" in flares_df.columns:
+                    mask &= flares_df["active_region"] == region_number
+
+                candidates = flares_df.loc[mask]
+                if len(candidates) == 0:
+                    return None
+
+                next_time = candidates["start_time"].iloc[0]
+                time_delta = next_time - timestamp
+                if time_delta.total_seconds() / 3600.0 > self.max_time_hours:
+                    return None
+                return next_time
+
             with self.db.get_session() as session:  # type: ignore[assignment]
                 query = (
                     session.query(FlareEvent)
@@ -95,6 +169,7 @@ class SurvivalLabeler:
         self,
         timestamp: datetime,
         region_number: Optional[int] = None,
+        preloaded_flares: Optional[pd.DataFrame] = None,
     ) -> Dict[str, Any]:
         """
         create survival label for a single timestamp.
@@ -111,7 +186,11 @@ class SurvivalLabeler:
         returns:
             dict with survival label
         """
-        next_flare_time = self.find_next_flare_time(timestamp, region_number)
+        next_flare_time = self.find_next_flare_time(
+            timestamp,
+            region_number,
+            preloaded_flares=preloaded_flares,
+        )
 
         if next_flare_time is None:
             # censored observation - no event within max_time_hours
@@ -139,6 +218,7 @@ class SurvivalLabeler:
         timestamps: List[datetime],
         region_number: Optional[int] = None,
         show_progress: bool = True,
+        preloaded_flares: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """
         create survival labels for multiple timestamps.
@@ -151,6 +231,9 @@ class SurvivalLabeler:
         returns:
             dataframe with survival labels (duration, event, event_time)
         """
+        if preloaded_flares is None:
+            preloaded_flares = self._load_target_flares(timestamps, region_number)
+
         labels_list = []
 
         iterable = timestamps
@@ -159,7 +242,11 @@ class SurvivalLabeler:
 
         for timestamp in iterable:
             try:
-                label_dict = self.create_survival_label(timestamp, region_number)
+                label_dict = self.create_survival_label(
+                    timestamp,
+                    region_number,
+                    preloaded_flares=preloaded_flares,
+                )
                 labels_list.append(label_dict)
             except Exception as e:
                 logger.error(f"error creating survival label for {timestamp}: {e}")
@@ -243,7 +330,10 @@ class SurvivalLabeler:
                 # handle edge cases: if survival is constant or increases
                 # (shouldn't happen but numerical errors)
                 if prob < 0:
-                    logger.debug(f"negative probability for {bucket_label}: {prob:.6f} (s_start={s_start:.4f}, s_end={s_end:.4f}), clamping to 0")
+                    logger.debug(
+                        f"negative probability for {bucket_label}: {prob:.6f} "
+                        f"(s_start={s_start:.4f}, s_end={s_end:.4f}), clamping to 0"
+                    )
                     prob = 0.0
 
             prob_dist[bucket_label] = max(0.0, min(1.0, prob))

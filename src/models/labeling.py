@@ -6,7 +6,6 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 import pandas as pd
-import numpy as np
 
 from src.config import CONFIG
 from src.data.database import get_database
@@ -18,6 +17,13 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG = CONFIG.get("model", {})
 TARGET_WINDOWS = MODEL_CONFIG.get("target_windows", [24, 48])  # hours ahead
 TARGET_CLASSES = MODEL_CONFIG.get("classes", ["None", "C", "M", "X"])  # ordered by severity
+
+
+def _normalize_timestamp(ts: datetime) -> datetime:
+    """ensure timestamps are timezone-naive for pandas compatibility."""
+    if ts.tzinfo is not None:
+        return ts.replace(tzinfo=None)
+    return ts
 
 
 class FlareLabeler:
@@ -56,10 +62,98 @@ class FlareLabeler:
 
         return max_class
 
+    def _filter_preloaded_flares(
+        self,
+        preloaded_flares: pd.DataFrame,
+        window_start: datetime,
+        window_end: datetime,
+        region_number: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """filter preloaded flare dataframe for the given window."""
+        if preloaded_flares is None or len(preloaded_flares) == 0:
+            return pd.DataFrame()
+
+        mask = (preloaded_flares["start_time"] >= window_start) & (
+            preloaded_flares["start_time"] < window_end
+        )
+        if region_number is not None and "active_region" in preloaded_flares.columns:
+            mask &= preloaded_flares["active_region"] == region_number
+
+        return preloaded_flares.loc[mask].copy()
+
+    def _load_flares_for_range(
+        self,
+        timestamps: List[datetime],
+        windows: Optional[List[int]] = None,
+        region_number: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """
+        bulk load flare events covering the provided timestamps and windows.
+
+        args:
+            timestamps: timestamps to label
+            windows: prediction windows
+            region_number: optional region filter
+
+        returns:
+            dataframe of flare events
+        """
+        if not timestamps:
+            return pd.DataFrame()
+
+        normalized_timestamps = [_normalize_timestamp(ts) for ts in timestamps]
+        min_timestamp = min(normalized_timestamps)
+        max_timestamp = max(normalized_timestamps)
+
+        if windows is None or len(windows) == 0:
+            windows = self.target_windows
+
+        max_window = max(windows)
+        range_end = max_timestamp + timedelta(hours=max_window)
+
+        try:
+            with self.db.get_session() as session:
+                query = (
+                    session.query(FlareEvent)
+                    .filter(
+                        FlareEvent.start_time >= min_timestamp,
+                        FlareEvent.start_time < range_end,
+                    )
+                    .order_by(FlareEvent.start_time)
+                )
+                if region_number is not None:
+                    query = query.filter(FlareEvent.active_region == region_number)
+
+                records = query.all()
+
+                # extract attributes while session is still open to avoid DetachedInstanceError
+                flares_df = pd.DataFrame(
+                    [
+                        {
+                            "start_time": _normalize_timestamp(r.start_time),
+                            "peak_time": _normalize_timestamp(r.peak_time),
+                            "class_category": r.class_category,
+                            "class_magnitude": r.class_magnitude,
+                            "active_region": r.active_region,
+                        }
+                        for r in records
+                    ]
+                )
+        except Exception as e:
+            logger.error(f"error bulk loading flares: {e}")
+            return pd.DataFrame()
+
+        if len(flares_df) == 0:
+            return pd.DataFrame()
+
+        return flares_df
+
     def create_labels_for_timestamp(
         self,
         timestamp: datetime,
         windows: Optional[List[int]] = None,
+        preloaded_flares: Optional[pd.DataFrame] = None,
+        region_number: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         create labels for a single timestamp.
@@ -82,18 +176,28 @@ class FlareLabeler:
             window_end = timestamp + timedelta(hours=window)
 
             try:
-                with self.db.get_session() as session:
-                    # find flares that start within the prediction window
-                    # we use start_time to catch flares that begin in the window
-                    flares_query = (
-                        session.query(FlareEvent)
-                        .filter(
-                            FlareEvent.start_time >= window_start,
-                            FlareEvent.start_time < window_end,
-                        )
-                        .order_by(FlareEvent.start_time)
+                if preloaded_flares is not None:
+                    flares_df = self._filter_preloaded_flares(
+                        preloaded_flares,
+                        window_start,
+                        window_end,
+                        region_number=region_number,
                     )
-                    flares_records = flares_query.all()
+                else:
+                    with self.db.get_session() as session:
+                        flares_query = (
+                            session.query(FlareEvent)
+                            .filter(
+                                FlareEvent.start_time >= window_start,
+                                FlareEvent.start_time < window_end,
+                            )
+                            .order_by(FlareEvent.start_time)
+                        )
+                        if region_number is not None:
+                            flares_query = flares_query.filter(
+                                FlareEvent.active_region == region_number
+                            )
+                        flares_records = flares_query.all()
 
                     flares_df = pd.DataFrame(
                         [
@@ -107,20 +211,20 @@ class FlareLabeler:
                         ],
                     )
 
-                    # get maximum flare class
-                    max_class = self.get_max_flare_class(flares_df)
+                # get maximum flare class
+                max_class = self.get_max_flare_class(flares_df)
 
-                    # store label
-                    labels[f"label_{window}h"] = max_class
-                    labels[f"num_flares_{window}h"] = len(flares_df)
+                # store label
+                labels[f"label_{window}h"] = max_class
+                labels[f"num_flares_{window}h"] = len(flares_df)
 
-                    # store detailed info about flares
-                    if len(flares_df) > 0:
-                        labels[f"max_magnitude_{window}h"] = flares_df["class_magnitude"].max()
-                        labels[f"flare_classes_{window}h"] = ",".join(flares_df["class_category"].unique())
-                    else:
-                        labels[f"max_magnitude_{window}h"] = 0.0
-                        labels[f"flare_classes_{window}h"] = ""
+                # store detailed info about flares
+                if len(flares_df) > 0:
+                    labels[f"max_magnitude_{window}h"] = flares_df["class_magnitude"].max()
+                    labels[f"flare_classes_{window}h"] = ",".join(flares_df["class_category"].unique())
+                else:
+                    labels[f"max_magnitude_{window}h"] = 0.0
+                    labels[f"flare_classes_{window}h"] = ""
 
             except Exception as e:
                 logger.error(f"error creating labels for {timestamp} (window {window}h): {e}")
@@ -133,6 +237,8 @@ class FlareLabeler:
         self,
         timestamps: List[datetime],
         windows: Optional[List[int]] = None,
+        region_number: Optional[int] = None,
+        preloaded_flares: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """
         create labels for multiple timestamps.
@@ -147,11 +253,23 @@ class FlareLabeler:
         if windows is None:
             windows = self.target_windows
 
+        if preloaded_flares is None:
+            preloaded_flares = self._load_flares_for_range(
+                timestamps,
+                windows=windows,
+                region_number=region_number,
+            )
+
         labels_list = []
 
         for timestamp in timestamps:
             try:
-                label_dict = self.create_labels_for_timestamp(timestamp, windows)
+                label_dict = self.create_labels_for_timestamp(
+                    timestamp,
+                    windows,
+                    preloaded_flares=preloaded_flares,
+                    region_number=region_number,
+                )
                 labels_list.append(label_dict)
             except Exception as e:
                 logger.error(f"error creating labels for {timestamp}: {e}")
@@ -179,6 +297,7 @@ class FlareLabeler:
         self,
         features_df: pd.DataFrame,
         windows: Optional[List[int]] = None,
+        region_number: Optional[int] = None,
     ) -> pd.DataFrame:
         """
         create labels for feature dataframe.
@@ -194,7 +313,11 @@ class FlareLabeler:
             raise ValueError("features dataframe must have 'timestamp' column")
 
         timestamps = features_df["timestamp"].tolist()
-        labels_df = self.create_labels(timestamps, windows)
+        labels_df = self.create_labels(
+            timestamps,
+            windows,
+            region_number=region_number,
+        )
 
         # merge labels with features
         result_df = features_df.merge(labels_df, on="timestamp", how="left")
@@ -219,4 +342,3 @@ def create_labels(
     labeler = FlareLabeler()
     return labeler.create_labels(timestamps, windows)
 # fmt: on
-

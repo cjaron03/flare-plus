@@ -1,4 +1,8 @@
-"""mlflow experiment tracking wrapper for flare+ models."""
+"""mlflow experiment tracking wrapper for flare+ models.
+
+Provides a simple toggle to disable tracking (via config.yaml or env), which
+is useful when SQLite-backed tracking hangs on macOS Docker volume mounts.
+"""
 
 import logging
 import os
@@ -15,6 +19,24 @@ logger = logging.getLogger(__name__)
 
 # mlflow config from config.yaml
 MLFLOW_CONFIG = CONFIG.get("mlflow", {})
+
+
+def mlflow_enabled() -> bool:
+    """Return True when mlflow tracking is enabled.
+
+    Controlled by:
+    - config.yaml: mlflow.enabled (default True if missing)
+    - env override: MLFLOW_ENABLED ("0"/"false" to disable)
+    """
+
+    env_override = os.getenv("MLFLOW_ENABLED")
+    if env_override is not None:
+        return env_override.lower() not in {"0", "false", "no"}
+
+    # default to True if not specified in config
+    return bool(MLFLOW_CONFIG.get("enabled", True))
+
+
 DEFAULT_TRACKING_URI = MLFLOW_CONFIG.get("tracking_uri", "sqlite:///mlruns.db")
 DEFAULT_EXPERIMENT_NAME = MLFLOW_CONFIG.get("experiment_name", "flare-plus")
 MODEL_REGISTRY_NAME = MLFLOW_CONFIG.get("model_registry_name", "flare-plus-models")
@@ -37,9 +59,15 @@ class MLflowTracker:
             experiment_name: experiment name (default: from config)
             model_registry_name: model registry name (default: from config)
         """
+        self.enabled = mlflow_enabled()
         self.tracking_uri = tracking_uri or DEFAULT_TRACKING_URI
         self.experiment_name = experiment_name or DEFAULT_EXPERIMENT_NAME
         self.model_registry_name = model_registry_name or MODEL_REGISTRY_NAME
+
+        if not self.enabled:
+            logger.info("mlflow disabled via config/env; tracking calls will be skipped")
+            self.client = None
+            return
 
         # set tracking uri
         mlflow.set_tracking_uri(self.tracking_uri)
@@ -73,6 +101,10 @@ class MLflowTracker:
         returns:
             active mlflow run
         """
+        if not self.enabled:
+            logger.debug("mlflow disabled; start_run is a no-op")
+            return None
+
         mlflow.set_experiment(self.experiment_name)
 
         tags = tags or {}
@@ -82,6 +114,8 @@ class MLflowTracker:
 
     def log_params(self, params: Dict[str, Any]):
         """log parameters to current run."""
+        if not self.enabled:
+            return
         try:
             mlflow.log_params(params)
             logger.debug(f"logged {len(params)} parameters")
@@ -90,6 +124,8 @@ class MLflowTracker:
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None):
         """log metrics to current run."""
+        if not self.enabled:
+            return
         try:
             mlflow.log_metrics(metrics, step=step)
             logger.debug(f"logged {len(metrics)} metrics")
@@ -117,6 +153,9 @@ class MLflowTracker:
         returns:
             model uri
         """
+        if not self.enabled:
+            logger.debug("mlflow disabled; skipping model log")
+            return ""
         try:
             if model_type == "sklearn":
                 mlflow.sklearn.log_model(
@@ -155,6 +194,8 @@ class MLflowTracker:
             dataset_name: name of dataset
             dataset_info: optional dataset metadata
         """
+        if not self.enabled:
+            return
         try:
             if os.path.exists(dataset_path):
                 mlflow.log_artifact(dataset_path, artifact_path="datasets")
@@ -182,6 +223,9 @@ class MLflowTracker:
         returns:
             registered model version
         """
+        if not self.enabled:
+            logger.debug("mlflow disabled; skipping model registry")
+            return ""
         try:
             result = mlflow.register_model(model_uri, model_name)
             logger.info(f"registered model: {model_name} version {result.version}")
@@ -205,6 +249,8 @@ class MLflowTracker:
         returns:
             loaded model
         """
+        if not self.enabled:
+            raise RuntimeError("mlflow disabled; cannot load model from registry")
         try:
             model = mlflow.sklearn.load_model(model_uri)
             logger.info(f"loaded model from: {model_uri}")
