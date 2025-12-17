@@ -85,11 +85,11 @@
   <div class="shap-importance">
     <PlotlyChart data={chartData} layout={chartLayout} />
 
-    {#if explanation && explanation.base_value !== undefined}
+    {#if explanation && typeof explanation.base_value === "number"}
       <div class="base-info">
         <span class="label">Base value:</span>
         <span class="value">{explanation.base_value.toFixed(4)}</span>
-        {#if explanation.predicted_probability !== undefined}
+        {#if typeof explanation.predicted_probability === "number"}
           <span class="separator">|</span>
           <span class="label">Prediction:</span>
           <span class="value highlight"

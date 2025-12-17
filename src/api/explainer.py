@@ -113,16 +113,29 @@ def get_explainer_type(model: Any) -> str:
 class ShapExplainer:
     """SHAP explanations for flare prediction models."""
 
-    def __init__(self, max_background_samples: int = 100):
+    def __init__(self, max_background_samples: int = 100, max_cache_size: int = 10):
         """
         Initialize SHAP explainer.
 
         args:
             max_background_samples: maximum background samples for KernelExplainer
+            max_cache_size: maximum number of explainers to cache (prevents memory leak)
         """
         self.max_background_samples = max_background_samples
+        self.max_cache_size = max_cache_size
         self._explainer_cache: Dict[str, Any] = {}
         self._background_cache: Dict[str, np.ndarray] = {}
+        self._cache_order: List[str] = []  # Track insertion order for LRU eviction
+
+    def _enforce_cache_limit(self) -> None:
+        """Evict oldest cache entries if cache exceeds max size."""
+        while len(self._explainer_cache) > self.max_cache_size and self._cache_order:
+            oldest_key = self._cache_order.pop(0)
+            if oldest_key in self._explainer_cache:
+                del self._explainer_cache[oldest_key]
+                logger.debug(f"Evicted explainer from cache: {oldest_key}")
+            if oldest_key in self._background_cache:
+                del self._background_cache[oldest_key]
 
     def _get_cache_key(self, model: Any, model_type: str, window: int) -> str:
         """Generate cache key for explainer."""
@@ -195,14 +208,20 @@ class ShapExplainer:
         returns:
             dict with SHAP explanation data
         """
+        # Validate top_n
+        if top_n < 1:
+            top_n = 15
+
         cache_key = self._get_cache_key(model, model_type, window)
 
-        # get or create explainer
-        if cache_key not in self._explainer_cache:
-            self._explainer_cache[cache_key] = self._create_explainer(model, X_background, feature_names)
-        explainer = self._explainer_cache[cache_key]
-
         try:
+            # get or create explainer
+            if cache_key not in self._explainer_cache:
+                self._explainer_cache[cache_key] = self._create_explainer(model, X_background, feature_names)
+                self._cache_order.append(cache_key)
+                self._enforce_cache_limit()
+            explainer = self._explainer_cache[cache_key]
+
             # compute SHAP values
             shap_values = explainer.shap_values(X)
             expected_value = explainer.expected_value
@@ -216,21 +235,38 @@ class ShapExplainer:
                 # multiclass: one array per class
                 shap_by_class = {}
                 base_by_class = {}
+                # Only iterate over available SHAP values (bounds check)
+                num_shap_classes = len(shap_values)
                 for i, class_name in enumerate(classes):
+                    if i >= num_shap_classes:
+                        logger.warning(f"SHAP values missing for class {class_name} (index {i})")
+                        continue
                     shap_by_class[str(class_name)] = shap_values[i][0].tolist()
-                    if isinstance(expected_value, (list, np.ndarray)):
+                    if isinstance(expected_value, (list, np.ndarray)) and i < len(expected_value):
                         base_by_class[str(class_name)] = float(expected_value[i])
                     else:
-                        base_by_class[str(class_name)] = float(expected_value)
+                        base_by_class[str(class_name)] = (
+                            float(expected_value)
+                            if not isinstance(expected_value, (list, np.ndarray))
+                            else float(expected_value[0])
+                        )
             else:
                 # binary or single output
+                # Handle expected_value being scalar, array, or list
+                if isinstance(expected_value, np.ndarray):
+                    base_val = float(expected_value.item()) if expected_value.ndim == 0 else float(expected_value[0])
+                elif isinstance(expected_value, list):
+                    base_val = float(expected_value[0])
+                else:
+                    base_val = float(expected_value)
+
                 if len(classes) == 2:
                     # binary classification - shap_values is for positive class
                     shap_by_class = {str(classes[1]): shap_values[0].tolist()}
-                    base_by_class = {str(classes[1]): float(expected_value)}
+                    base_by_class = {str(classes[1]): base_val}
                 else:
                     shap_by_class = {str(classes[0]): shap_values[0].tolist()}
-                    base_by_class = {str(classes[0]): float(expected_value)}
+                    base_by_class = {str(classes[0]): base_val}
 
             # get predicted class
             y_pred = model.predict(X)[0]
@@ -299,6 +335,10 @@ class ShapExplainer:
         returns:
             dict with SHAP explanation data
         """
+        # Validate top_n
+        if top_n < 1:
+            top_n = 15
+
         shap = _get_shap()
 
         try:
@@ -336,7 +376,13 @@ class ShapExplainer:
 
             # build feature contributions
             contributions = []
-            shap_arr = shap_values[0] if len(shap_values.shape) > 1 else shap_values
+            # Handle both list (multiclass) and ndarray formats
+            if isinstance(shap_values, list):
+                shap_arr = shap_values[0] if len(shap_values) > 0 else np.array([])
+            elif hasattr(shap_values, "shape") and len(shap_values.shape) > 1:
+                shap_arr = shap_values[0]
+            else:
+                shap_arr = shap_values
             for i, (name, shap_val) in enumerate(zip(feature_names, shap_arr)):
                 contributions.append(
                     {
@@ -378,6 +424,7 @@ class ShapExplainer:
         """Clear explainer cache."""
         self._explainer_cache.clear()
         self._background_cache.clear()
+        self._cache_order.clear()
         logger.info("SHAP explainer cache cleared")
 
 

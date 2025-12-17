@@ -90,6 +90,7 @@ class SurvivalRequest(BaseModel):
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="cox", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+    include_explanation: bool = Field(default=False, alias="includeExplanation")
 
 
 class TimelineRequest(BaseModel):
@@ -615,6 +616,7 @@ def create_app(
             payload = {
                 "timestamp": timestamp.isoformat(),
                 "model_type": request.model_type,
+                "include_explanation": request.include_explanation,
             }
             if region is not None:
                 payload["region_number"] = region
@@ -647,6 +649,7 @@ def create_app(
                     timestamp=timestamp,
                     region_number=region,
                     model_type=request.model_type,
+                    include_explanation=request.include_explanation,
                 )
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.exception("Survival prediction failed")
