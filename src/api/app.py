@@ -7,8 +7,10 @@ import sys
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+import sentry_sdk
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from sentry_sdk.integrations.flask import FlaskIntegration
 
 from src.api.service import PredictionService
 from src.models.pipeline import ClassificationPipeline
@@ -19,6 +21,20 @@ from src.data.schema import SystemValidationLog
 from src.config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
+
+# initialize sentry if dsn is configured
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[FlaskIntegration()],
+        traces_sample_rate=0.1,  # 10% of transactions for performance monitoring
+        profiles_sample_rate=0.1,  # 10% of transactions for profiling
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
+    logger.info("sentry initialized for error monitoring")
+else:
+    logger.info("sentry dsn not configured, skipping initialization")
 
 
 def create_app(

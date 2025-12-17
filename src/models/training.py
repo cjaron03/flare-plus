@@ -9,11 +9,30 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils.class_weight import compute_class_weight
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
+
+import sys
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+    # configure tqdm for docker/non-interactive terminals
+    TQDM_KWARGS = {
+        "file": sys.stderr,  # use stderr to avoid buffering
+        "mininterval": 1.0,  # update at least every second
+        "miniters": 1,  # update after each iteration
+        "disable": False,  # explicitly enable
+    }
+except ImportError:
+    HAS_TQDM = False
+    TQDM_KWARGS = {}
+
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +137,34 @@ class ModelTrainer:
             random_state=self.random_state,
             class_weight=class_weight,
             solver="lbfgs",
+            verbose=1,  # show progress during fitting
         )
 
-        # cross-validation
+        # cross-validation with progress logging
         cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
-        cv_scores = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
+        cv_splits = list(cv.split(X, y))
+        cv_scores = []
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits, 1):
+            logger.info(f"[{fold_idx}/{self.cv_folds}] training cv fold...")
+            X_train_cv, X_val_cv = X[train_idx], X[val_idx]
+            y_train_cv, y_val_cv = y[train_idx], y[val_idx]
+            model_cv = LogisticRegression(
+                max_iter=2000,
+                random_state=self.random_state,
+                class_weight=class_weight,
+                solver="lbfgs",
+                verbose=1,  # show progress during fitting
+            )
+            logger.info(f"[{fold_idx}/{self.cv_folds}] fitting model (this may take a moment)...")
+            model_cv.fit(X_train_cv, y_train_cv)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] evaluating fold...")
+            score = model_cv.score(X_val_cv, y_val_cv)
+            cv_scores.append(score)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] fold accuracy: {score:.4f}")
+        cv_scores = np.array(cv_scores)
 
         # fit on full data
+        logger.info("fitting model on full training data...")
         model.fit(X, y)
 
         training_info = {
@@ -168,13 +208,35 @@ class ModelTrainer:
             max_depth=3,
             random_state=self.random_state,
             subsample=0.8,
+            verbose=1,  # show progress during fitting
         )
 
-        # cross-validation
+        # cross-validation with progress logging
         cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
-        cv_scores = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
+        cv_splits = list(cv.split(X, y))
+        cv_scores = []
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits, 1):
+            logger.info(f"[{fold_idx}/{self.cv_folds}] training cv fold...")
+            X_train_cv, X_val_cv = X[train_idx], X[val_idx]
+            y_train_cv, y_val_cv = y[train_idx], y[val_idx]
+            model_cv = GradientBoostingClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=3,
+                random_state=self.random_state,
+                subsample=0.8,
+                verbose=1,  # show progress during fitting
+            )
+            logger.info(f"[{fold_idx}/{self.cv_folds}] fitting gradient boosting (100 trees, this may take 30-60s)...")
+            model_cv.fit(X_train_cv, y_train_cv)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] evaluating fold...")
+            score = model_cv.score(X_val_cv, y_val_cv)
+            cv_scores.append(score)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] fold accuracy: {score:.4f}")
+        cv_scores = np.array(cv_scores)
 
         # fit on full data
+        logger.info("fitting model on full training data...")
         model.fit(X, y)
 
         training_info = {
@@ -210,6 +272,7 @@ class ModelTrainer:
                 max_iter=2000,
                 random_state=self.random_state,
                 solver="lbfgs",
+                verbose=1,  # show progress during fitting
             )
         elif model_type == "gradient_boosting":
             base_model = GradientBoostingClassifier(
@@ -218,6 +281,7 @@ class ModelTrainer:
                 max_depth=3,
                 random_state=self.random_state,
                 subsample=0.8,
+                verbose=1,  # show progress during fitting
             )
         else:
             raise ValueError(f"unknown model type: {model_type}")
@@ -226,11 +290,27 @@ class ModelTrainer:
             [("smote", SMOTE(random_state=self.random_state)), ("model", base_model)]
         )
 
-        # cross-validation
+        # cross-validation with progress logging
         cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
-        cv_scores = cross_val_score(pipeline, X, y, cv=cv, scoring="accuracy")
+        cv_splits = list(cv.split(X, y))
+        cv_scores = []
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_splits, 1):
+            logger.info(f"[{fold_idx}/{self.cv_folds}] training cv fold (with smote)...")
+            X_train_cv, X_val_cv = X[train_idx], X[val_idx]
+            y_train_cv, y_val_cv = y[train_idx], y[val_idx]
+            pipeline_cv = ImbPipeline(
+                [("smote", SMOTE(random_state=self.random_state)), ("model", base_model)]
+            )
+            logger.info(f"[{fold_idx}/{self.cv_folds}] applying smote and fitting model (this may take a moment)...")
+            pipeline_cv.fit(X_train_cv, y_train_cv)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] evaluating fold...")
+            score = pipeline_cv.score(X_val_cv, y_val_cv)
+            cv_scores.append(score)
+            logger.info(f"[{fold_idx}/{self.cv_folds}] fold accuracy: {score:.4f}")
+        cv_scores = np.array(cv_scores)
 
         # fit on full data
+        logger.info("fitting model on full training data (with smote)...")
         pipeline.fit(X, y)
 
         training_info = {

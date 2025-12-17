@@ -8,12 +8,31 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
+import sys
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+    # configure tqdm for docker/non-interactive terminals
+    TQDM_KWARGS = {
+        "file": sys.stderr,  # use stderr to avoid buffering
+        "mininterval": 1.0,  # update at least every second
+        "miniters": 1,  # update after each iteration
+        "disable": False,  # explicitly enable
+    }
+except ImportError:
+    HAS_TQDM = False
+    TQDM_KWARGS = {}
+
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
 from src.config import CONFIG
 from src.features.pipeline import FeatureEngineer
 from src.models.labeling import FlareLabeler
 from src.models.training import ModelTrainer
 from src.models.evaluation import ModelEvaluator
-from src.ml.experiment_tracking import MLflowTracker
+from src.ml.experiment_tracking import MLflowTracker, mlflow_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +50,7 @@ class ClassificationPipeline:
         cv_folds: int = 5,
         calibrate: bool = True,
         random_state: int = 42,
-        use_mlflow: bool = True,
+        use_mlflow: Optional[bool] = None,
     ):
         """
         initialize classification pipeline.
@@ -41,7 +60,7 @@ class ClassificationPipeline:
             cv_folds: number of cross-validation folds
             calibrate: whether to calibrate probabilities
             random_state: random seed
-            use_mlflow: whether to use mlflow tracking
+            use_mlflow: whether to use mlflow tracking (None -> auto from config/env)
         """
         self.feature_engineer = FeatureEngineer()
         self.labeler = FlareLabeler()
@@ -53,8 +72,9 @@ class ClassificationPipeline:
         self.cv_folds = cv_folds
         self.calibrate = calibrate
         self.random_state = random_state
-        self.use_mlflow = use_mlflow
-        self.mlflow_tracker = MLflowTracker() if use_mlflow else None
+        resolved_use_mlflow = mlflow_enabled() if use_mlflow is None else use_mlflow
+        self.use_mlflow = resolved_use_mlflow
+        self.mlflow_tracker = MLflowTracker() if resolved_use_mlflow else None
         self.models: Dict[str, Any] = {}
         self.evaluation_results: Dict[str, Any] = {}
 
@@ -172,7 +192,9 @@ class ClassificationPipeline:
 
         results = {}
 
-        for window in TARGET_WINDOWS:
+        # train each window with progress logging
+        for window_idx, window in enumerate(TARGET_WINDOWS, 1):
+            logger.info(f"[window {window_idx}/{len(TARGET_WINDOWS)}] training {window}h prediction window...")
             label_col = f"label_{window}h"
             if label_col not in dataset.columns:
                 logger.warning(f"label column {label_col} not found, skipping")
@@ -250,10 +272,10 @@ class ClassificationPipeline:
             class_dist = dict(zip([classes[i] for i in unique_labels], counts))
             logger.info(f"class distribution (train): {class_dist}")
 
-            # train models
+            # train models with progress logging
             window_results = {}
-            for model_type in models:
-                logger.info(f"\ntraining {model_type} model...")
+            for model_idx, model_type in enumerate(models, 1):
+                logger.info(f"[model {model_idx}/{len(models)}] training {model_type} model for {window}h window...")
 
                 try:
                     # prepare temporary dataframe for training

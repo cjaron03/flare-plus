@@ -9,6 +9,8 @@ x-app-env: &app-env
   BACKFILL_START_DATE: ${BACKFILL_START_DATE:-2023-01-01}
   ADMIN_ACCESS_TOKEN: ${ADMIN_ACCESS_TOKEN:-}
   ADMIN_RUNTIME_TOKEN: ${ADMIN_RUNTIME_TOKEN:-}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
   PYTHONUNBUFFERED: 1
   PYTHONDONTWRITEBYTECODE: 1
 
@@ -101,7 +103,7 @@ services:
       - ./scripts:/app/scripts
       - app_data:/app/data
       - app_models:/app/models
-      - ./ui-frontend/dist:/app/ui-frontend/dist:ro
+      - ./ui-frontend/dist:/app/ui-frontend/dist
 
   # vite dev server for hot reloading during development
   ui-dev:

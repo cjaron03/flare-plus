@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
+import sentry_sdk
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from src.config import AdminConfig, CONFIG
 from src.ui.utils.admin import fetch_validation_logs, trigger_validation_via_api
@@ -42,6 +45,20 @@ from src.ui.utils.ingestion import (
 )
 
 logger = logging.getLogger(__name__)
+
+# initialize sentry if dsn is configured
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=0.1,  # 10% of transactions for performance monitoring
+        profiles_sample_rate=0.1,  # 10% of transactions for profiling
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
+    logger.info("sentry initialized for error monitoring")
+else:
+    logger.info("sentry dsn not configured, skipping initialization")
 
 
 # Request models ----------------------------------------------------------------

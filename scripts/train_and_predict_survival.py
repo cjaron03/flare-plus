@@ -167,6 +167,7 @@ def train_model(
     model_types: list = None,
     target_flare_class: str = "X",
     allow_insufficient_data: bool = False,
+    use_mlflow: bool = True,
 ) -> SurvivalAnalysisPipeline:
     """
     train survival analysis model on historical data.
@@ -263,6 +264,7 @@ def train_model(
     pipeline = SurvivalAnalysisPipeline(
         target_flare_class=target_flare_class,
         max_time_hours=168,
+        use_mlflow=use_mlflow,
     )
 
     # get actual data range first (when we have flux data)
@@ -541,6 +543,11 @@ def main():
         action="store_true",
         help="override data sufficiency guardrail (not recommended for production)",
     )
+    parser.add_argument(
+        "--no-mlflow",
+        action="store_true",
+        help="disable mlflow tracking (helpful on macOS Docker volumes)",
+    )
 
     args = parser.parse_args()
 
@@ -595,6 +602,8 @@ def main():
             # default: 90 days ago
             start_date = end_date - timedelta(days=90)
 
+        use_mlflow = not args.no_mlflow
+
         try:
             pipeline = train_model(
                 start_date,
@@ -604,6 +613,7 @@ def main():
                 model_types=args.train_models,
                 target_flare_class=args.target_class,
                 allow_insufficient_data=args.allow_insufficient_data,
+                use_mlflow=use_mlflow,
             )
             logger.info("model training complete")
 
