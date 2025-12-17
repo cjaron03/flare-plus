@@ -10,9 +10,12 @@ from typing import Optional, Dict, Any
 import sentry_sdk
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from sentry_sdk.integrations.flask import FlaskIntegration
 
 from src.api.service import PredictionService
+from src.api.auth import require_api_key
 from src.models.pipeline import ClassificationPipeline
 from src.models.survival_pipeline import SurvivalAnalysisPipeline
 from src.data.ingestion import DataIngestionPipeline
@@ -54,19 +57,41 @@ def create_app(
     app = Flask(__name__)
     CORS(app)  # enable cross-origin requests
 
+    # initialize rate limiter
+    # uses in-memory storage by default (upgrade to Redis for production scaling)
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        default_limits=["100 per hour"],
+        storage_uri="memory://",
+    )
+
     # initialize prediction service
     service = PredictionService(
         classification_pipeline=classification_pipeline,
         survival_pipeline=survival_pipeline,
     )
 
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to all responses."""
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # CSP for API - restrict to self
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        return response
+
     @app.route("/health", methods=["GET"])
+    @limiter.exempt  # no rate limit for health checks
     def health():
         """health check endpoint."""
         status = service.health_check()
         return jsonify(status), 200
 
     @app.route("/validate/system", methods=["POST"])
+    @require_api_key
     def trigger_system_validation():
         """trigger end-to-end system validation run."""
 
@@ -109,6 +134,7 @@ def create_app(
             return jsonify({"error": "failed to trigger validation"}), 500
 
     @app.route("/validation/logs", methods=["GET"])
+    @require_api_key
     def list_validation_logs():
         """return recent validation runs for admin dashboard."""
         try:
@@ -146,6 +172,8 @@ def create_app(
             return jsonify({"error": "failed to fetch validation logs"}), 500
 
     @app.route("/predict/classification", methods=["POST"])
+    @limiter.limit("20 per minute")  # stricter limit for compute-heavy endpoint
+    @require_api_key
     def predict_classification():
         """
         classification prediction endpoint.
@@ -191,6 +219,8 @@ def create_app(
             return jsonify({"error": "internal server error"}), 500
 
     @app.route("/predict/survival", methods=["POST"])
+    @limiter.limit("20 per minute")  # stricter limit for compute-heavy endpoint
+    @require_api_key
     def predict_survival():
         """
         survival prediction endpoint.
@@ -236,6 +266,8 @@ def create_app(
             return jsonify({"error": "internal server error"}), 500
 
     @app.route("/predict/all", methods=["POST"])
+    @limiter.limit("10 per minute")  # strictest limit - runs both models
+    @require_api_key
     def predict_all():
         """
         combined prediction endpoint (classification + survival).
@@ -307,6 +339,8 @@ def create_app(
             return "failed"
 
     @app.route("/ingest", methods=["POST"])
+    @limiter.limit("5 per minute")  # limit expensive ingestion operations
+    @require_api_key
     def ingest():
         """
         data ingestion endpoint (day 2: with duration tracking).
