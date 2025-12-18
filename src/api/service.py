@@ -43,6 +43,7 @@ class PredictionService:
         window: int = 24,
         model_type: str = "gradient_boosting",
         region_number: Optional[int] = None,
+        include_explanation: bool = False,
     ) -> Dict[str, Any]:
         """
         make classification prediction (short-term flare class).
@@ -52,6 +53,7 @@ class PredictionService:
             window: prediction window in hours (24 or 48)
             model_type: model type ('logistic' or 'gradient_boosting')
             region_number: optional region number
+            include_explanation: whether to include SHAP explanation
 
         returns:
             prediction dict with class probabilities
@@ -87,6 +89,7 @@ class PredictionService:
                 window=window,
                 model_type=model_type,
                 region_number=region_number,
+                include_explanation=include_explanation,
             )
 
             # add drift info if available
@@ -113,6 +116,7 @@ class PredictionService:
         model_type: str = "cox",
         region_number: Optional[int] = None,
         time_buckets: Optional[list] = None,
+        include_explanation: bool = False,
     ) -> Dict[str, Any]:
         """
         make survival prediction (time-to-event probabilities).
@@ -122,6 +126,7 @@ class PredictionService:
             model_type: model type ('cox' or 'gb')
             region_number: optional region number
             time_buckets: optional custom time buckets
+            include_explanation: whether to include SHAP explanation (GB only)
 
         returns:
             prediction dict with survival probabilities over time buckets
@@ -154,6 +159,7 @@ class PredictionService:
                 region_number=region_number,
                 model_type=model_type,
                 time_buckets=time_buckets,
+                include_explanation=include_explanation,
             )
 
             # add drift info if available

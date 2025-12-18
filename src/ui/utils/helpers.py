@@ -281,6 +281,7 @@ def make_api_request(
     method: str = "GET",
     json_data: Optional[Dict[str, Any]] = None,
     timeout: int = 10,
+    api_key: Optional[str] = None,
 ) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
     """
     make api request with error handling.
@@ -291,16 +292,21 @@ def make_api_request(
         method: http method
         json_data: optional json data for post requests
         timeout: request timeout
+        api_key: optional API key for authentication (X-API-Key header)
 
     returns:
         tuple: (success, response_data, error_message)
     """
     try:
         url = f"{api_url}{endpoint}"
+        headers = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
         if method.upper() == "POST":
-            response = requests.post(url, json=json_data, timeout=timeout)
+            response = requests.post(url, json=json_data, headers=headers, timeout=timeout)
         else:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, headers=headers, timeout=timeout)
 
         response.raise_for_status()
         return True, response.json(), None

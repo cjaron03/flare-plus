@@ -101,8 +101,14 @@ def mock_survival_pipeline():
 
 
 @pytest.fixture
-def app(mock_classification_pipeline, mock_survival_pipeline):
+def app(mock_classification_pipeline, mock_survival_pipeline, monkeypatch):
     """create flask app for testing."""
+    from src.api import auth
+
+    # Set test API key
+    monkeypatch.setenv("API_KEYS", "test-api-key-12345")
+    auth.reload_api_keys()
+
     app = create_app(
         classification_pipeline=mock_classification_pipeline,
         survival_pipeline=mock_survival_pipeline,
@@ -115,6 +121,12 @@ def app(mock_classification_pipeline, mock_survival_pipeline):
 def client(app):
     """create test client."""
     return app.test_client()
+
+
+@pytest.fixture
+def auth_headers():
+    """Return headers with valid API key."""
+    return {"X-API-Key": "test-api-key-12345"}
 
 
 class TestHealthEndpoint:
@@ -147,7 +159,7 @@ class TestHealthEndpoint:
 class TestClassificationEndpoint:
     """tests for /predict/classification endpoint."""
 
-    def test_classification_prediction_success(self, client, mock_classification_pipeline):
+    def test_classification_prediction_success(self, client, mock_classification_pipeline, auth_headers):
         """test successful classification prediction."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -160,6 +172,7 @@ class TestClassificationEndpoint:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -171,7 +184,7 @@ class TestClassificationEndpoint:
         # verify pipeline was called
         mock_classification_pipeline.predict.assert_called_once()
 
-    def test_classification_prediction_missing_timestamp(self, client):
+    def test_classification_prediction_missing_timestamp(self, client, auth_headers):
         """test classification prediction without timestamp."""
         payload = {"window": 24}
 
@@ -179,6 +192,7 @@ class TestClassificationEndpoint:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
@@ -186,7 +200,7 @@ class TestClassificationEndpoint:
         assert "error" in data
         assert "timestamp" in data["error"].lower()
 
-    def test_classification_prediction_invalid_window(self, client):
+    def test_classification_prediction_invalid_window(self, client, auth_headers):
         """test classification prediction with invalid window."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -198,13 +212,14 @@ class TestClassificationEndpoint:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "error" in data
 
-    def test_classification_prediction_with_region(self, client, mock_classification_pipeline):
+    def test_classification_prediction_with_region(self, client, mock_classification_pipeline, auth_headers):
         """test classification prediction with region number."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -218,6 +233,7 @@ class TestClassificationEndpoint:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -232,7 +248,7 @@ class TestClassificationEndpoint:
 class TestSurvivalEndpoint:
     """tests for /predict/survival endpoint."""
 
-    def test_survival_prediction_success(self, client, mock_survival_pipeline):
+    def test_survival_prediction_success(self, client, mock_survival_pipeline, auth_headers):
         """test successful survival prediction."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -244,6 +260,7 @@ class TestSurvivalEndpoint:
             "/predict/survival",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -255,7 +272,7 @@ class TestSurvivalEndpoint:
         # verify pipeline was called
         mock_survival_pipeline.predict_survival_probabilities.assert_called_once()
 
-    def test_survival_prediction_missing_timestamp(self, client):
+    def test_survival_prediction_missing_timestamp(self, client, auth_headers):
         """test survival prediction without timestamp."""
         payload = {"model_type": "cox"}
 
@@ -263,13 +280,14 @@ class TestSurvivalEndpoint:
             "/predict/survival",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "error" in data
 
-    def test_survival_prediction_invalid_model_type(self, client):
+    def test_survival_prediction_invalid_model_type(self, client, auth_headers):
         """test survival prediction with invalid model type."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -281,13 +299,14 @@ class TestSurvivalEndpoint:
             "/predict/survival",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "error" in data
 
-    def test_survival_prediction_with_custom_buckets(self, client, mock_survival_pipeline):
+    def test_survival_prediction_with_custom_buckets(self, client, mock_survival_pipeline, auth_headers):
         """test survival prediction with custom time buckets."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -300,6 +319,7 @@ class TestSurvivalEndpoint:
             "/predict/survival",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -312,7 +332,9 @@ class TestSurvivalEndpoint:
 class TestCombinedEndpoint:
     """tests for /predict/all endpoint."""
 
-    def test_combined_prediction_success(self, client, mock_classification_pipeline, mock_survival_pipeline):
+    def test_combined_prediction_success(
+        self, client, mock_classification_pipeline, mock_survival_pipeline, auth_headers
+    ):
         """test successful combined prediction."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -325,6 +347,7 @@ class TestCombinedEndpoint:
             "/predict/all",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -334,7 +357,7 @@ class TestCombinedEndpoint:
         assert "24h" in data["classifications"]
         assert "48h" in data["classifications"]
 
-    def test_combined_prediction_missing_timestamp(self, client):
+    def test_combined_prediction_missing_timestamp(self, client, auth_headers):
         """test combined prediction without timestamp."""
         payload = {}
 
@@ -342,13 +365,16 @@ class TestCombinedEndpoint:
             "/predict/all",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
         data = json.loads(response.data)
         assert "error" in data
 
-    def test_combined_prediction_with_region(self, client, mock_classification_pipeline, mock_survival_pipeline):
+    def test_combined_prediction_with_region(
+        self, client, mock_classification_pipeline, mock_survival_pipeline, auth_headers
+    ):
         """test combined prediction with region number."""
         timestamp = datetime.now().isoformat()
         payload = {
@@ -360,6 +386,7 @@ class TestCombinedEndpoint:
             "/predict/all",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 200
@@ -436,18 +463,19 @@ class TestMonitoringIntegration:
 class TestErrorHandling:
     """tests for error handling."""
 
-    def test_invalid_json(self, client):
+    def test_invalid_json(self, client, auth_headers):
         """test handling of invalid json."""
         response = client.post(
             "/predict/classification",
             data="invalid json",
             content_type="application/json",
+            headers=auth_headers,
         )
 
         # flask should handle this gracefully
         assert response.status_code in [400, 500]
 
-    def test_malformed_timestamp(self, client):
+    def test_malformed_timestamp(self, client, auth_headers):
         """test handling of malformed timestamp."""
         payload = {
             "timestamp": "not-a-date",
@@ -458,11 +486,12 @@ class TestErrorHandling:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 400
 
-    def test_prediction_internal_error(self, client, mock_classification_pipeline):
+    def test_prediction_internal_error(self, client, mock_classification_pipeline, auth_headers):
         """test handling of internal prediction errors."""
         # make pipeline raise exception
         mock_classification_pipeline.predict.side_effect = Exception("model error")
@@ -477,6 +506,7 @@ class TestErrorHandling:
             "/predict/classification",
             data=json.dumps(payload),
             content_type="application/json",
+            headers=auth_headers,
         )
 
         assert response.status_code == 500

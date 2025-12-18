@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import PlotlyChart from "../components/PlotlyChart.svelte";
   import LoadingSpinner from "../components/LoadingSpinner.svelte";
+  import ShapFeatureImportance from "../components/ShapFeatureImportance.svelte";
   import { fetchStatus, predictClassification, predictSurvival } from "../lib/api";
 
   const formatInputValue = (date = new Date()) => {
@@ -23,6 +24,9 @@
   let classificationResult = null;
   let classificationLoading = false;
   let classificationChart = null;
+  let classificationExplanation = null;
+  let includeExplanation = true;
+  let showExplanation = false;
 
   // survival form
   let survivalModel = "cox";
@@ -31,6 +35,7 @@
   let survivalLoading = false;
   let survivalCurve = null;
   let survivalDistribution = null;
+  let survivalExplanation = null;
 
   const loadStatus = async () => {
     statusLoading = true;
@@ -65,13 +70,16 @@
     classificationStatus = "";
     classificationResult = null;
     classificationChart = null;
+    classificationExplanation = null;
+    showExplanation = false;
     try {
       const payload = {
         timestamp: toISO(timestamp),
         window: Number(windowHours),
-        regionNumber: parsedRegion(),
-        modelType,
-        forceRefresh
+        region_number: parsedRegion(),
+        model_type: modelType,
+        force_refresh: forceRefresh,
+        include_explanation: includeExplanation
       };
       const result = await predictClassification(payload);
       if (result && result.success === false) {
@@ -95,6 +103,11 @@
           marker: { color: "#38bdf8" }
         }
       ];
+      // extract SHAP explanation if available
+      if (result.result.explanation && !result.result.explanation.error) {
+        classificationExplanation = result.result.explanation;
+        showExplanation = true;
+      }
       classificationStatus = result.status || "Prediction completed successfully";
       if (forceRefresh) {
         await loadStatus();
@@ -103,6 +116,7 @@
       classificationStatus = err.message || err.data?.message || "Failed to run prediction. Check that the API server is running and models are loaded.";
       classificationResult = null;
       classificationChart = null;
+      classificationExplanation = null;
     } finally {
       classificationLoading = false;
     }
@@ -294,6 +308,36 @@
             }}
             data={classificationChart}
           />
+        </div>
+      {/if}
+
+      {#if classificationExplanation}
+        <div class="card" style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="margin: 0; font-size: 1rem; font-weight: 600;">Feature Importance (SHAP)</h3>
+            <button
+              class="secondary small"
+              on:click={() => showExplanation = !showExplanation}
+            >
+              {showExplanation ? 'Hide' : 'Show'} Details
+            </button>
+          </div>
+          {#if showExplanation}
+            <ShapFeatureImportance
+              explanation={classificationExplanation}
+              maxFeatures={15}
+              title="Top features driving prediction"
+            />
+            <div class="explanation-info" style="margin-top: 1rem; font-size: 0.85rem; color: rgba(226, 232, 240, 0.65);">
+              <p style="margin: 0.5rem 0;">
+                <strong style="color: #10b981;">Green bars</strong> = features that increased the probability of {classificationExplanation.predicted_class} class.
+                <strong style="color: #ef4444;">Red bars</strong> = features that decreased it.
+              </p>
+              <p style="margin: 0.5rem 0;">
+                Explainer type: <code style="background: rgba(30, 41, 59, 0.8); padding: 0.1rem 0.4rem; border-radius: 0.25rem;">{classificationExplanation.explainer_type}</code>
+              </p>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

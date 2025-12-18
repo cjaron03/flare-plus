@@ -73,3 +73,4 @@ ui-frontend/*.timestamp-*.mjs
 
 # local utility scripts
 migrate_db.sh
+mlruns.db

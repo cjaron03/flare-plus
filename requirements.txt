@@ -18,12 +18,16 @@ imbalanced-learn>=0.11.0
 # survival analysis
 lifelines>=0.27.8
 
+# model explainability
+shap>=0.43.0
+
 # experiment tracking
 mlflow>=2.10.0
 
 # api
 flask>=3.0.0
 flask-cors>=4.0.0
+flask-limiter>=3.5.0
 gunicorn>=21.2.0
 fastapi>=0.109.0
 uvicorn[standard]>=0.25.0

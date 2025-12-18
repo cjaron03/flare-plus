@@ -60,7 +60,8 @@ DB_USER=postgres
 DB_PASSWORD=your_password_here
 DB_NAME=flare_prediction
 
-# API Configuration (optional)
+# API Configuration
+API_KEYS=your-api-key-here  # Required! Comma-separated API keys for authentication
 API_HOST_PORT=5001          # Host port for API (default: 5001)
 API_PORT=5000               # Container port for API (default: 5000)
 
@@ -73,10 +74,10 @@ UI_API_URL=http://127.0.0.1:5001  # API URL for frontend (default: auto-detected
 CLASSIFICATION_MODEL_PATH=/app/models/classification_model.joblib
 SURVIVAL_MODEL_PATH=/app/models/survival_model_m_class.joblib
 
-# Admin UI (optional)
+# Admin UI (optional - change these for production!)
 ADMIN_UI_LOGIN_ENABLED=true
-ADMIN_UI_USERNAME=plncake
-ADMIN_UI_PASSWORD=12345
+ADMIN_UI_USERNAME=your_admin_username
+ADMIN_UI_PASSWORD=your_secure_password
 ADMIN_UI_MAX_ATTEMPTS=5
 ADMIN_UI_ATTEMPT_WINDOW=300  # seconds
 ADMIN_UI_LOCKOUT_SECONDS=600

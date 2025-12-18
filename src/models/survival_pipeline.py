@@ -283,6 +283,7 @@ class SurvivalAnalysisPipeline:
         region_number: Optional[int] = None,
         model_type: str = "cox",
         time_buckets: Optional[List[int]] = None,
+        include_explanation: bool = False,
     ) -> Dict[str, Any]:
         """
         predict survival probabilities (probability of no flare in time buckets).
@@ -292,6 +293,7 @@ class SurvivalAnalysisPipeline:
             region_number: optional region number
             model_type: "cox" or "gb"
             time_buckets: list of bucket boundaries in hours
+            include_explanation: whether to include SHAP explanation
 
         returns:
             dict with survival probabilities over time buckets
@@ -438,7 +440,7 @@ class SurvivalAnalysisPipeline:
         else:
             hazard = self.gb_model.predict_hazard(covariates_df)[0]
 
-        return {
+        result = {
             "timestamp": timestamp,
             "region_number": region_number,
             "model_type": model_type,
@@ -450,6 +452,34 @@ class SurvivalAnalysisPipeline:
                 "probabilities": survival_probs.tolist(),
             },
         }
+
+        # add SHAP explanation if requested (only for GB model - Cox is too slow)
+        if include_explanation and model_type == "gb":
+            try:
+                from src.api.explainer import get_explainer
+
+                # get feature values as numpy array
+                X = covariates_df.values
+                feature_names = list(covariates_df.columns)
+
+                explainer = get_explainer()
+                explanation = explainer.explain_survival(
+                    model=self.gb_model,
+                    X=X,
+                    feature_names=feature_names,
+                    model_type=model_type,
+                )
+                result["explanation"] = explanation
+            except Exception as e:
+                logger.warning(f"failed to compute SHAP explanation: {e}")
+                result["explanation"] = {"error": str(e)}
+        elif include_explanation and model_type == "cox":
+            result["explanation"] = {
+                "error": "SHAP explanations not available for Cox model (too slow)",
+                "suggestion": "Use GB model for explanations",
+            }
+
+        return result
 
     def compare_models(
         self,

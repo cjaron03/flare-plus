@@ -116,6 +116,22 @@ class DataConfig:
     ENDPOINTS = CONFIG["data_ingestion"]["endpoints"]
 
 
+class APIClientConfig:
+    """API client configuration for UI dashboard requests."""
+
+    # API key for authenticating UI requests to the prediction API
+    # Should match one of the keys in API_KEYS on the server
+    API_KEY = os.getenv("UI_API_KEY", "")
+
+    @classmethod
+    def get_headers(cls) -> dict:
+        """Get headers dict for API requests, including auth if configured."""
+        headers = {"Content-Type": "application/json"}
+        if cls.API_KEY:
+            headers["X-API-Key"] = cls.API_KEY
+        return headers
+
+
 class AdminConfig:
     """admin access configuration for dashboard authentication."""
 

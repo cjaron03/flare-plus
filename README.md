@@ -208,12 +208,9 @@ set `UI_HOST_PORT` or `UI_PORT` to customize host/container ports and `UI_API_UR
 
 #### admin login
 
-use the **Login** tab in the dashboard to unlock admin-only tools during development. default credentials:
+use the **Login** tab in the dashboard to unlock admin-only tools during development.
 
-- username: `plncake`
-- password: `12345`
-
-toggle or change credentials via environment variables:
+configure credentials via environment variables (see `.env.example`):
 
 - `ADMIN_UI_LOGIN_ENABLED` (default `true`)
 - `ADMIN_UI_USERNAME` / `ADMIN_UI_PASSWORD`

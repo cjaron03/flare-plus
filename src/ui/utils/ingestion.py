@@ -6,6 +6,8 @@ from typing import Dict, Any, Optional, Tuple
 
 import requests
 
+from src.config import APIClientConfig
+
 logger = logging.getLogger(__name__)
 
 # rate limiting constants
@@ -51,7 +53,11 @@ def run_ingestion_via_api(
         url = f"{api_url}/ingest"
         payload = {"use_cache": use_cache}
 
-        response = requests.post(url, json=payload, timeout=300)  # 5 minute timeout for ingestion
+        headers = {}
+        if APIClientConfig.API_KEY:
+            headers["X-API-Key"] = APIClientConfig.API_KEY
+
+        response = requests.post(url, json=payload, headers=headers, timeout=300)  # 5 minute timeout for ingestion
 
         response.raise_for_status()
         data = response.json()

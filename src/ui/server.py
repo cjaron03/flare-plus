@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from src.config import AdminConfig, CONFIG
+from src.config import AdminConfig, APIClientConfig, CONFIG
 from src.ui.utils.admin import fetch_validation_logs, trigger_validation_via_api
 from src.ui.utils.data_queries import (
     calculate_data_freshness,
@@ -72,6 +72,7 @@ class ClassificationRequest(BaseModel):
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="gradient_boosting", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+    include_explanation: bool = Field(default=False, alias="includeExplanation")
 
     @field_validator("window")
     @classmethod
@@ -89,6 +90,7 @@ class SurvivalRequest(BaseModel):
     region_number: Optional[int] = Field(default=None, alias="regionNumber")
     model_type: str = Field(default="cox", alias="modelType")
     force_refresh: bool = Field(default=False, alias="forceRefresh")
+    include_explanation: bool = Field(default=False, alias="includeExplanation")
 
 
 class TimelineRequest(BaseModel):
@@ -294,7 +296,7 @@ def _serialize_classification_result(prediction: Dict[str, Any], window: int) ->
     labels = [item[0] for item in ordered]
     values = [round(item[1] * 100, 2) for item in ordered]
 
-    return {
+    result = {
         "predictedClass": prediction.get("predicted_class", "Unknown"),
         "windowHours": prediction.get("window_hours", window),
         "probabilities": class_probs,
@@ -302,6 +304,13 @@ def _serialize_classification_result(prediction: Dict[str, Any], window: int) ->
         "orderedValues": values,
         "text": format_classification_prediction(prediction),
     }
+
+    # include SHAP explanation if present
+    explanation = prediction.get("explanation")
+    if explanation:
+        result["explanation"] = explanation
+
+    return result
 
 
 def _serialize_survival_result(prediction: Dict[str, Any]) -> Dict[str, Any]:
@@ -515,12 +524,17 @@ def create_app(
                 "timestamp": timestamp.isoformat(),
                 "window": int(request.window),  # ensure integer type
                 "model_type": request.model_type,
+                "include_explanation": request.include_explanation,
             }
             if region is not None:
                 payload["region_number"] = region
 
             success, data, error = make_api_request(
-                state.api_url, "/predict/classification", method="POST", json_data=payload
+                state.api_url,
+                "/predict/classification",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
             )
             if success and data:
                 prediction = data
@@ -548,6 +562,7 @@ def create_app(
                     window=request.window,
                     model_type=request.model_type,
                     region_number=region,
+                    include_explanation=request.include_explanation,
                 )
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.exception("Classification prediction failed")
@@ -605,12 +620,17 @@ def create_app(
             payload = {
                 "timestamp": timestamp.isoformat(),
                 "model_type": request.model_type,
+                "include_explanation": request.include_explanation,
             }
             if region is not None:
                 payload["region_number"] = region
 
             success, data, error = make_api_request(
-                state.api_url, "/predict/survival", method="POST", json_data=payload
+                state.api_url,
+                "/predict/survival",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
             )
             if success and data:
                 prediction = data
@@ -637,6 +657,7 @@ def create_app(
                     timestamp=timestamp,
                     region_number=region,
                     model_type=request.model_type,
+                    include_explanation=request.include_explanation,
                 )
             except Exception as exc:  # pragma: no cover - runtime guard
                 logger.exception("Survival prediction failed")
