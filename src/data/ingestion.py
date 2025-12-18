@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict
 
 try:
     from tqdm import tqdm
@@ -15,11 +15,14 @@ except ImportError:
         return iterable
 
 
+import pandas as pd
+
 from src.config import DataConfig
 from src.data.fetchers import GOESXRayFetcher, SolarRegionFetcher, MagnetogramFetcher, load_cache, save_cache
 from src.data.persistence import DataPersister
 from src.data.database import init_database
 from src.data.flare_detector import FlareDetector
+from src.data.donki_fetcher import DonkiFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,128 @@ class DataIngestionPipeline:
         self.magnetogram_fetcher = MagnetogramFetcher()
         self.flare_detector = FlareDetector()
         self.persister = DataPersister()
+        self.donki_fetcher = self._init_donki_fetcher()
+
+    def _init_donki_fetcher(self) -> Optional[DonkiFetcher]:
+        """initialize donki fetcher if nasa api key is configured."""
+        api_key = DataConfig.NASA_API_KEY
+        if not api_key or api_key == "DEMO_KEY":
+            logger.info("NASA_API_KEY not configured, DONKI integration disabled")
+            return None
+        logger.info("DONKI integration enabled")
+        return DonkiFetcher(api_key=api_key)
+
+    def _fetch_donki_flares(self, days: int = 7) -> dict:
+        """
+        fetch recent flare events from nasa donki.
+
+        args:
+            days: number of days to look back (default: 7)
+
+        returns:
+            dict with ingestion statistics
+        """
+        if self.donki_fetcher is None:
+            return {"status": "skipped", "reason": "NASA_API_KEY not configured"}
+
+        try:
+            end_date = datetime.utcnow()
+            start_date = end_date - timedelta(days=days)
+
+            logger.info(f"fetching DONKI flares for past {days} days")
+            flares = self.donki_fetcher.fetch_flares(start_date, end_date)
+
+            if not flares:
+                logger.info("no DONKI flares found in date range")
+                return {"status": "success", "records_inserted": 0, "records_updated": 0}
+
+            # convert to FlareEvent DataFrame format
+            flares_df = self._convert_donki_to_flare_events(flares)
+
+            if flares_df is None or len(flares_df) == 0:
+                return {"status": "success", "records_inserted": 0, "records_updated": 0}
+
+            # save using existing persister (handles duplicates)
+            result = self.persister.save_flare_events(flares_df)
+            return result
+
+        except Exception as e:
+            logger.error(f"error fetching DONKI flares: {e}")
+            return {"status": "failure", "error": str(e)}
+
+    def _convert_donki_to_flare_events(self, donki_flares: List[Dict]) -> Optional[pd.DataFrame]:
+        """
+        convert donki api response to FlareEvent dataframe format.
+
+        args:
+            donki_flares: list of raw donki flare records
+
+        returns:
+            dataframe with columns matching save_flare_events() expectations
+        """
+        rows = []
+        for flare in donki_flares:
+            class_type = flare.get("classType")
+            if not class_type:
+                continue
+
+            # parse class (e.g., "M2.5" -> ("M", 2.5))
+            category, magnitude = self._parse_flare_class(class_type)
+            if not category:
+                continue
+
+            # parse timestamps
+            start_time = self._parse_donki_timestamp(flare.get("beginTime"))
+            peak_time = self._parse_donki_timestamp(flare.get("peakTime"))
+            end_time = self._parse_donki_timestamp(flare.get("endTime"))
+
+            if not start_time or not peak_time:
+                continue
+
+            rows.append(
+                {
+                    "start_time": start_time,
+                    "peak_time": peak_time,
+                    "end_time": end_time,
+                    "flare_class": class_type,
+                    "class_category": category,
+                    "class_magnitude": magnitude,
+                    "active_region": flare.get("activeRegionNum"),
+                    "source": "nasa_donki",
+                    "verified": True,  # official NASA catalog
+                }
+            )
+
+        if not rows:
+            return None
+
+        return pd.DataFrame(rows)
+
+    def _parse_flare_class(self, class_str: str) -> tuple:
+        """parse flare class string like 'M2.5' into ('M', 2.5)."""
+        if not class_str:
+            return (None, None)
+        try:
+            category = class_str[0].upper()
+            magnitude = float(class_str[1:])
+            return (category, magnitude)
+        except (ValueError, IndexError):
+            return (None, None)
+
+    def _parse_donki_timestamp(self, ts_str: str) -> Optional[datetime]:
+        """parse donki timestamp string to datetime."""
+        if not ts_str:
+            return None
+        try:
+            # handle Z suffix and timezone offsets
+            ts_clean = ts_str.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(ts_clean)
+            # convert to naive UTC
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
+        except (ValueError, AttributeError):
+            return None
 
     def run_incremental_update(self, use_cache: bool = True) -> dict:
         """
@@ -49,6 +174,7 @@ class DataIngestionPipeline:
             "solar_regions": None,
             "magnetogram": None,
             "flare_events": None,
+            "donki_flares": None,
             "timestamp": datetime.utcnow(),
         }
 
@@ -146,6 +272,27 @@ class DataIngestionPipeline:
             logger.error(f"error fetching solar regions: {e}")
             results["solar_regions"] = {"status": "failure", "error": str(e)}
 
+        # fetch verified flare events from NASA DONKI
+        try:
+            results["donki_flares"] = self._fetch_donki_flares(days=7)
+
+            donki_stats = results["donki_flares"]
+            if donki_stats.get("status") == "success":
+                inserted = donki_stats.get("records_inserted", 0)
+                duplicates = donki_stats.get("records_updated", 0)
+                if inserted > 0:
+                    logger.info(f"saved {inserted} new DONKI verified flares")
+                elif duplicates > 0:
+                    logger.info(f"DONKI flares: {duplicates} verified (all duplicates)")
+                else:
+                    logger.info("DONKI flares: none in date range")
+            elif donki_stats.get("status") == "skipped":
+                logger.debug(f"DONKI fetch skipped: {donki_stats.get('reason', 'unknown')}")
+
+        except Exception as e:
+            logger.error(f"error in DONKI ingestion: {e}")
+            results["donki_flares"] = {"status": "failure", "error": str(e)}
+
         return results
 
     def run_historical_backfill(self, start_date: str, end_date: Optional[str] = None):
@@ -229,6 +376,22 @@ def main():
             logger.info(f"magnetograms:   {mag_stats.get('records_inserted', 0):,} records saved")
         else:
             logger.error(f"magnetograms:   failed - {mag_stats.get('error_message', 'unknown error')}")
+
+    if results.get("donki_flares"):
+        donki_stats = results["donki_flares"]
+        if donki_stats.get("status") == "success":
+            inserted = donki_stats.get("records_inserted", 0)
+            duplicates = donki_stats.get("records_updated", 0)
+            if inserted > 0:
+                logger.info(f"donki flares:   {inserted} new verified flares saved")
+            elif duplicates > 0:
+                logger.info(f"donki flares:   {duplicates} verified (all duplicates)")
+            else:
+                logger.info("donki flares:   none in date range")
+        elif donki_stats.get("status") == "skipped":
+            logger.info(f"donki flares:   skipped - {donki_stats.get('reason', 'disabled')}")
+        else:
+            logger.error(f"donki flares:   failed - {donki_stats.get('error', 'unknown error')}")
 
     logger.info("=" * 60)
     logger.info("ingestion complete")

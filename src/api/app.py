@@ -317,7 +317,7 @@ def create_app(
         determine overall ingestion status based on individual data type statuses.
 
         args:
-            results: ingestion results dict with xray_flux, solar_regions, magnetogram, flare_events
+            results: ingestion results dict with xray_flux, solar_regions, magnetogram, flare_events, donki_flares
 
         returns:
             "success" (all succeeded), "partial" (some succeeded), or "failed" (all failed)
@@ -325,10 +325,13 @@ def create_app(
         statuses = []
 
         # check each data type's status field
-        for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+        for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events", "donki_flares"]:
             if key in results and results[key] is not None:
                 result_data = results[key]
                 status = result_data.get("status", "failed")
+                # treat "skipped" as success (graceful degradation for optional sources like DONKI)
+                if status == "skipped":
+                    status = "success"
                 statuses.append(status)
 
         if not statuses:
@@ -382,7 +385,7 @@ def create_app(
 
             # format results with status for each data type
             formatted_results = {}
-            for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events"]:
+            for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events", "donki_flares"]:
                 if key in results and results[key] is not None:
                     result_data = results[key]
                     status = result_data.get("status", "failed")
@@ -399,6 +402,11 @@ def create_app(
                         elif key == "flare_events":
                             formatted_results[key]["new"] = result_data.get("records_inserted", 0)
                             formatted_results[key]["duplicates"] = result_data.get("records_updated", 0)
+                        elif key == "donki_flares":
+                            formatted_results[key]["new"] = result_data.get("records_inserted", 0)
+                            formatted_results[key]["duplicates"] = result_data.get("records_updated", 0)
+                    elif status == "skipped":
+                        formatted_results[key]["reason"] = result_data.get("reason", "disabled")
                     else:
                         formatted_results[key]["error"] = result_data.get(
                             "error", result_data.get("error_message", "unknown error")
