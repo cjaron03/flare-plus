@@ -154,6 +154,19 @@ def format_ingestion_summary(response_data: Dict[str, Any]) -> str:
                     lines.append(f"- Flares: {duplicates} detected (all duplicates)")
                 else:
                     lines.append("- Flares: none detected")
+            elif key == "donki_flares":
+                new_count = result_data.get("new", 0)
+                duplicates = result_data.get("duplicates", 0)
+                if new_count > 0:
+                    lines.append(f"- DONKI: {new_count} new verified, {duplicates} duplicates")
+                elif duplicates > 0:
+                    lines.append(f"- DONKI: {duplicates} verified (all duplicates)")
+                else:
+                    lines.append("- DONKI: no new events")
+        elif status == "skipped":
+            reason = result_data.get("reason", "disabled")
+            key_name = key.replace("_", " ").title()
+            lines.append(f"- {key_name}: skipped ({reason})")
         else:
             error = result_data.get("error", "unknown error")
             key_name = key.replace("_", " ").title()
