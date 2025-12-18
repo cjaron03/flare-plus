@@ -322,30 +322,45 @@ def create_app(
         returns:
             "success" (all succeeded), "partial" (some succeeded), or "failed" (all failed)
         """
-        statuses = []
+        # required sources - these determine overall status
+        required_keys = ["xray_flux", "solar_regions", "magnetogram", "flare_events"]
+        # optional sources - don't mask failures in required sources
+        optional_keys = ["donki_flares"]
 
-        # check each data type's status field
-        for key in ["xray_flux", "solar_regions", "magnetogram", "flare_events", "donki_flares"]:
+        required_statuses = []
+        for key in required_keys:
             if key in results and results[key] is not None:
                 result_data = results[key]
                 status = result_data.get("status", "failed")
-                # treat "skipped" as success (graceful degradation for optional sources like DONKI)
-                if status == "skipped":
-                    status = "success"
-                statuses.append(status)
+                required_statuses.append(status)
 
-        if not statuses:
+        # if no required sources were attempted, it's a failure
+        if not required_statuses:
             return "failed"
 
-        success_count = sum(1 for s in statuses if s == "success")
-        total_count = len(statuses)
+        required_success = sum(1 for s in required_statuses if s == "success")
+        required_total = len(required_statuses)
 
-        if success_count == total_count:
-            return "success"
-        elif success_count > 0:
-            return "partial"
+        # determine base status from required sources only
+        if required_success == required_total:
+            base_status = "success"
+        elif required_success > 0:
+            base_status = "partial"
         else:
-            return "failed"
+            base_status = "failed"
+
+        # optional sources can only improve status, never mask failures
+        # "skipped" optional sources don't affect status at all
+        for key in optional_keys:
+            if key in results and results[key] is not None:
+                result_data = results[key]
+                status = result_data.get("status", "failed")
+                # only count optional source if it actually succeeded (not skipped)
+                if status == "success" and base_status == "failed":
+                    # at least one optional source succeeded, upgrade to partial
+                    base_status = "partial"
+
+        return base_status
 
     @app.route("/ingest", methods=["POST"])
     @limiter.limit("5 per minute")  # limit expensive ingestion operations
