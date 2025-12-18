@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from src.config import AdminConfig, CONFIG
+from src.config import AdminConfig, APIClientConfig, CONFIG
 from src.ui.utils.admin import fetch_validation_logs, trigger_validation_via_api
 from src.ui.utils.data_queries import (
     calculate_data_freshness,
@@ -530,7 +530,11 @@ def create_app(
                 payload["region_number"] = region
 
             success, data, error = make_api_request(
-                state.api_url, "/predict/classification", method="POST", json_data=payload
+                state.api_url,
+                "/predict/classification",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
             )
             if success and data:
                 prediction = data
@@ -622,7 +626,11 @@ def create_app(
                 payload["region_number"] = region
 
             success, data, error = make_api_request(
-                state.api_url, "/predict/survival", method="POST", json_data=payload
+                state.api_url,
+                "/predict/survival",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
             )
             if success and data:
                 prediction = data

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, Tuple
 
 import gradio as gr
 
+from src.config import APIClientConfig
 from src.ui.utils.helpers import (
     make_api_request,
     format_classification_prediction,
@@ -65,7 +66,11 @@ def create_classification_prediction(
                 payload["region_number"] = region_number
 
             success, data, error = make_api_request(
-                api_url, "/predict/classification", method="POST", json_data=payload
+                api_url,
+                "/predict/classification",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
             )
 
             if success and data:
@@ -175,7 +180,13 @@ def create_survival_prediction(
             if region_number is not None:
                 payload["region_number"] = region_number
 
-            success, data, error = make_api_request(api_url, "/predict/survival", method="POST", json_data=payload)
+            success, data, error = make_api_request(
+                api_url,
+                "/predict/survival",
+                method="POST",
+                json_data=payload,
+                api_key=APIClientConfig.API_KEY,
+            )
 
             if success and data:
                 prediction = data
