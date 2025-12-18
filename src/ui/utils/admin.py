@@ -5,7 +5,7 @@ from typing import Tuple, List, Dict, Any
 
 import requests
 
-from src.config import AdminConfig
+from src.config import AdminConfig, APIClientConfig
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,14 @@ def trigger_validation_via_api(api_url: str, initiated_by: str) -> Tuple[bool, D
         return False, {}, AdminConfig.disabled_reason()
 
     try:
+        headers = {}
+        if APIClientConfig.API_KEY:
+            headers["X-API-Key"] = APIClientConfig.API_KEY
+
         response = requests.post(
             f"{api_url}/validate/system",
             json={"initiated_by": initiated_by},
+            headers=headers,
             timeout=900,
         )
 
@@ -78,9 +83,14 @@ def fetch_validation_logs(api_url: str, limit: int = 5) -> Tuple[bool, List[Dict
         return False, [], AdminConfig.disabled_reason()
 
     try:
+        headers = {}
+        if APIClientConfig.API_KEY:
+            headers["X-API-Key"] = APIClientConfig.API_KEY
+
         response = requests.get(
             f"{api_url}/validation/logs",
             params={"limit": limit},
+            headers=headers,
             timeout=5,
         )
         response.raise_for_status()
