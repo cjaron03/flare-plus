@@ -19,10 +19,6 @@ CROSS="${RED}✗${NC}"
 INFO="${BLUE}ℹ${NC}"
 ARROW="${BLUE}→${NC}"
 
-# pid file for vite dev server
-VITE_PID_FILE=".vite.pid"
-VITE_LOG_FILE=".vite.log"
-
 # helper functions
 print_header() {
   echo ""
@@ -48,70 +44,56 @@ print_url() {
   echo -e "  ${ARROW} $1: ${GREEN}$2${NC}"
 }
 
-# check if vite dev server is running
+# check if vite dev server container is running
 is_vite_running() {
-  if [ -f "$VITE_PID_FILE" ]; then
-    local pid=$(cat "$VITE_PID_FILE")
-    if ps -p "$pid" > /dev/null 2>&1; then
-      return 0
-    fi
-  fi
-  return 1
+  docker compose ps ui-dev --format "{{.State}}" 2>/dev/null | grep -q "running"
 }
 
-# start vite dev server
+# start vite dev server via docker
 start_vite() {
   if is_vite_running; then
-    print_info "Vite dev server already running (PID: $(cat $VITE_PID_FILE))"
+    print_info "Vite dev server already running (Docker)"
     return 0
   fi
 
-  if ! command -v npm &> /dev/null; then
-    print_error "npm not found - cannot start Vite dev server"
-    print_info "Install Node.js/npm or use Docker-only mode"
-    return 1
-  fi
+  print_info "Starting Vite dev server (Docker)..."
+  docker compose up -d ui-dev 2>&1 | grep -v "Container.*Running" || true
 
-  if [ ! -d "ui-frontend" ]; then
-    print_error "ui-frontend directory not found"
-    return 1
-  fi
+  # wait for vite to be ready (check logs for "ready" message)
+  local max_attempts=30
+  local attempt=0
+  while [ $attempt -lt $max_attempts ]; do
+    if docker compose logs ui-dev 2>&1 | grep -q "VITE.*ready"; then
+      print_success "Vite dev server started"
+      return 0
+    fi
+    # also check if container exited with error
+    if ! docker compose ps ui-dev --format "{{.State}}" 2>/dev/null | grep -q "running"; then
+      print_error "Vite container exited unexpectedly"
+      print_info "Check logs with: ./flare dev-logs"
+      return 1
+    fi
+    sleep 1
+    attempt=$((attempt + 1))
+  done
 
-  print_info "Starting Vite dev server..."
-  cd ui-frontend
-  npm run dev > "../$VITE_LOG_FILE" 2>&1 &
-  local vite_pid=$!
-  cd ..
-
-  echo "$vite_pid" > "$VITE_PID_FILE"
-
-  # wait a moment for vite to start
-  sleep 2
-
-  if ps -p "$vite_pid" > /dev/null 2>&1; then
-    print_success "Vite dev server started (PID: $vite_pid)"
+  # check one more time if it's running
+  if is_vite_running; then
+    print_success "Vite dev server started"
     return 0
   else
-    print_error "Failed to start Vite dev server"
-    rm -f "$VITE_PID_FILE"
+    print_error "Vite dev server failed to start in time"
+    print_info "Check logs with: ./flare dev-logs"
     return 1
   fi
 }
 
 # stop vite dev server
 stop_vite() {
-  if [ -f "$VITE_PID_FILE" ]; then
-    local pid=$(cat "$VITE_PID_FILE")
-    if ps -p "$pid" > /dev/null 2>&1; then
-      print_info "Stopping Vite dev server (PID: $pid)..."
-      kill "$pid" 2>/dev/null
-      sleep 1
-      if ps -p "$pid" > /dev/null 2>&1; then
-        kill -9 "$pid" 2>/dev/null
-      fi
-      print_success "Vite dev server stopped"
-    fi
-    rm -f "$VITE_PID_FILE"
+  if is_vite_running; then
+    print_info "Stopping Vite dev server..."
+    docker compose stop ui-dev 2>/dev/null || true
+    print_success "Vite dev server stopped"
   fi
 }
 
@@ -152,9 +134,6 @@ case "$1" in
     docker compose down 2>&1 | grep -v "Container.*Stopping\|Container.*Stopped\|Network.*Removing" || true
 
     print_success "All services stopped"
-
-    # cleanup log file
-    rm -f "$VITE_LOG_FILE"
     echo ""
     ;;
 
@@ -173,7 +152,7 @@ case "$1" in
     # check vite dev server
     echo -e "${BLUE}Vite Dev Server:${NC}"
     if is_vite_running; then
-      print_success "Running (PID: $(cat $VITE_PID_FILE))"
+      print_success "Running (Docker container: ui-dev)"
       print_url "URL" "http://localhost:5173"
     else
       print_error "Not running"
@@ -195,14 +174,14 @@ case "$1" in
     ;;
 
   dev-logs)
-    if [ ! -f "$VITE_LOG_FILE" ]; then
-      print_error "Vite log file not found. Is Vite running?"
+    if ! is_vite_running; then
+      print_error "Vite dev server not running. Start with: ./flare up"
       exit 1
     fi
     print_header "Vite Dev Server Logs"
     print_info "Press Ctrl+C to exit"
     echo ""
-    tail -f "$VITE_LOG_FILE"
+    docker compose logs -f ui-dev
     ;;
 
   logs)
@@ -346,7 +325,6 @@ case "$1" in
     stop_vite
     docker compose down -v
     docker system prune -f
-    rm -f "$VITE_LOG_FILE"
     print_success "Cleanup complete"
     echo ""
     ;;
