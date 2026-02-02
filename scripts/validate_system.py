@@ -527,7 +527,17 @@ def test_prediction_pipeline() -> Tuple[bool, List[str]]:
                                 else:
                                     early_time = 6
 
-                                early_index = min(early_time, len(survival_probs) - 1)
+                                survival_info = survival_pred.get("survival_function", {})
+                                time_points = survival_info.get("time_points") or []
+
+                                if time_points and len(time_points) == len(survival_probs):
+                                    early_index = next(
+                                        (i for i, t in enumerate(time_points) if t >= early_time),
+                                        len(survival_probs) - 1,
+                                    )
+                                else:
+                                    early_index = min(early_time, len(survival_probs) - 1)
+
                                 survival_early = survival_probs[early_index]
 
                                 if survival_early <= 0.01:
