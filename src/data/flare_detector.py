@@ -2,10 +2,9 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
-import numpy as np
 from scipy.signal import find_peaks
 
 from src.data.database import get_database

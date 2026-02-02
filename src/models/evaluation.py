@@ -3,15 +3,11 @@
 
 import logging
 from typing import Dict, Any, Optional, List, Tuple
-import warnings
-
-import pandas as pd
 import numpy as np
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from sklearn.metrics import (
     brier_score_loss,
     roc_auc_score,
-    roc_curve,
     classification_report,
     confusion_matrix,
 )
@@ -412,4 +408,3 @@ def calibrate_probabilities(
     evaluator = ModelEvaluator()
     calibrated_model, _ = evaluator.calibrate_probabilities(model, X, y, method)
     return calibrated_model
-

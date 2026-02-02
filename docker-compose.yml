@@ -21,6 +21,7 @@ x-app-volumes: &app-volumes
   - ./src:/app/src
   - ./tests:/app/tests
   - ./config.yaml:/app/config.yaml
+  - ./.flake8:/app/.flake8
   - ./scripts:/app/scripts
   - app_data:/app/data
   - app_models:/app/models
