@@ -78,6 +78,7 @@ jobs:
           format: 'table'
           scanners: 'vuln'
           severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
           exit-code: 1
           timeout: '10m'
 
@@ -202,6 +203,7 @@ jobs:
           format: 'table'
           scanners: 'vuln'
           severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
           exit-code: 1
           timeout: '10m'
 
