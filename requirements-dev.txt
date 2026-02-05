@@ -6,7 +6,7 @@ pytest>=7.4.0
 pytest-cov>=4.1.0
 
 # code quality
-black>=23.0.0
+black==25.9.0
 flake8>=6.1.0
 mypy>=1.7.0
 pylint>=3.0.0
