@@ -102,7 +102,7 @@ case "$1" in
     print_header "Starting flare+ Development Environment"
 
     print_info "Starting Docker services..."
-    docker compose up -d postgres api ui 2>&1 | grep -v "Container.*Running" || true
+    docker compose up -d postgres app api ui 2>&1 | grep -v "Container.*Running" || true
 
     # wait for services to be healthy
     sleep 2

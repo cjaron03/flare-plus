@@ -1,6 +1,5 @@
 """tests for feature engineering module."""
 
-import pytest
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np

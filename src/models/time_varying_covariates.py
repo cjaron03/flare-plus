@@ -7,11 +7,13 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import numpy as np
+
 try:
     from tqdm import tqdm
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
+
     def tqdm(iterable, *args, **kwargs):
         return iterable
 
@@ -28,6 +30,7 @@ def _normalize_timestamp(ts: datetime) -> datetime:
     if ts.tzinfo is not None:
         return ts.replace(tzinfo=None)
     return ts
+
 
 # time-varying covariate config
 COVARIATE_CONFIG = CONFIG.get("time_varying_covariates", {})
@@ -73,7 +76,14 @@ class TimeVaryingCovariateEngineer:
                     .all()
                 )
                 data["flux"] = pd.DataFrame(
-                    [{"timestamp": _normalize_timestamp(r.timestamp), "flux_long": r.flux_long, "flux_short": r.flux_short} for r in flux_records]
+                    [
+                        {
+                            "timestamp": _normalize_timestamp(r.timestamp),
+                            "flux_long": r.flux_long,
+                            "flux_short": r.flux_short,
+                        }
+                        for r in flux_records
+                    ]
                 )
 
                 # load solar regions
@@ -315,11 +325,16 @@ class TimeVaryingCovariateEngineer:
                     score = metrics_dict.get("mount_wilson_complexity_score", 0.0)
                     mount_wilson_scores.append(score)
 
+            total_scores = mcintosh_scores + mount_wilson_scores
+            max_complexity = float(max(total_scores)) if total_scores else 0.0
+            avg_area = float(regions_df["area"].mean()) if len(regions_df) > 0 else 0.0
+            max_mcintosh = float(max(mcintosh_scores)) if mcintosh_scores else 0.0
+            max_mount_wilson = float(max(mount_wilson_scores)) if mount_wilson_scores else 0.0
             metrics = {
-                f"max_complexity_{lookback_hours}h": float(max(mcintosh_scores + mount_wilson_scores)) if len(mcintosh_scores + mount_wilson_scores) > 0 else 0.0,
-                f"avg_area_{lookback_hours}h": float(regions_df["area"].mean()) if len(regions_df) > 0 else 0.0,
-                f"max_mcintosh_{lookback_hours}h": float(max(mcintosh_scores)) if len(mcintosh_scores) > 0 else 0.0,
-                f"max_mount_wilson_{lookback_hours}h": float(max(mount_wilson_scores)) if len(mount_wilson_scores) > 0 else 0.0,
+                f"max_complexity_{lookback_hours}h": max_complexity,
+                f"avg_area_{lookback_hours}h": avg_area,
+                f"max_mcintosh_{lookback_hours}h": max_mcintosh,
+                f"max_mount_wilson_{lookback_hours}h": max_mount_wilson,
             }
 
             return metrics
@@ -462,7 +477,12 @@ class TimeVaryingCovariateEngineer:
             covariates.update(flux_metrics)
 
             # region complexity
-            complexity_metrics = self.compute_recent_region_complexity(timestamp, lookback, region_number, preloaded_data)
+            complexity_metrics = self.compute_recent_region_complexity(
+                timestamp,
+                lookback,
+                region_number,
+                preloaded_data,
+            )
             covariates.update(complexity_metrics)
 
             # flare history

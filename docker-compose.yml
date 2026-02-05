@@ -13,6 +13,7 @@ x-app-env: &app-env
   ENVIRONMENT: ${ENVIRONMENT:-development}
   API_KEYS: ${API_KEYS:-}
   UI_API_KEY: ${UI_API_KEY:-}
+  NASA_API_KEY: ${NASA_API_KEY:-}
   PYTHONUNBUFFERED: 1
   PYTHONDONTWRITEBYTECODE: 1
 
@@ -20,6 +21,7 @@ x-app-volumes: &app-volumes
   - ./src:/app/src
   - ./tests:/app/tests
   - ./config.yaml:/app/config.yaml
+  - ./.flake8:/app/.flake8
   - ./scripts:/app/scripts
   - app_data:/app/data
   - app_models:/app/models
