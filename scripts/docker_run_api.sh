@@ -34,9 +34,37 @@ if [ -n "${SURV_MODEL}" ]; then
 fi
 
 echo "starting api server on ${HOST}:${PORT} (workers=${WORKERS})"
-exec python scripts/run_api_server.py \
+
+ERROR_LOG="/tmp/flare_api_start.err"
+if python scripts/run_api_server.py \
   --host "${HOST}" \
   --port "${PORT}" \
   --workers "${WORKERS}" \
   ${CLASS_ARG} \
-  ${SURV_ARG}
+  ${SURV_ARG} \
+  2>"${ERROR_LOG}"; then
+  exit 0
+fi
+
+if grep -q "Resource deadlock avoided" "${ERROR_LOG}" 2>/dev/null; then
+  echo "detected bind-mount file lock, retrying api from runtime copy"
+  RUNTIME_ROOT="/tmp/flare-runtime-api"
+  rm -rf "${RUNTIME_ROOT}"
+  mkdir -p "${RUNTIME_ROOT}"
+  cp -R /app/src "${RUNTIME_ROOT}/src"
+  cp -R /app/scripts "${RUNTIME_ROOT}/scripts"
+  if [ -f /app/config.yaml ]; then
+    cp /app/config.yaml "${RUNTIME_ROOT}/config.yaml"
+  fi
+  export PYTHONPATH="${RUNTIME_ROOT}"
+  cd "${RUNTIME_ROOT}"
+  exec python scripts/run_api_server.py \
+    --host "${HOST}" \
+    --port "${PORT}" \
+    --workers "${WORKERS}" \
+    ${CLASS_ARG} \
+    ${SURV_ARG}
+fi
+
+cat "${ERROR_LOG}" >&2
+exit 1
