@@ -36,15 +36,43 @@ fi
 echo "starting api server on ${HOST}:${PORT} (workers=${WORKERS})"
 
 ERROR_LOG="/tmp/flare_api_start.err"
-if python scripts/run_api_server.py \
-  --host "${HOST}" \
-  --port "${PORT}" \
-  --workers "${WORKERS}" \
-  ${CLASS_ARG} \
-  ${SURV_ARG} \
-  2>"${ERROR_LOG}"; then
+CHILD_PID=""
+
+forward_signal() {
+  if [ -n "${CHILD_PID}" ]; then
+    kill "-$1" "${CHILD_PID}" 2>/dev/null || true
+  fi
+}
+
+run_api_server() {
+  python scripts/run_api_server.py \
+    --host "${HOST}" \
+    --port "${PORT}" \
+    --workers "${WORKERS}" \
+    ${CLASS_ARG} \
+    ${SURV_ARG} \
+    2>"${ERROR_LOG}" &
+  CHILD_PID=$!
+
+  trap 'forward_signal TERM' TERM
+  trap 'forward_signal INT' INT
+
+  if wait "${CHILD_PID}"; then
+    trap - TERM INT
+    CHILD_PID=""
+    return 0
+  fi
+
+  status=$?
+  trap - TERM INT
+  CHILD_PID=""
+  return "${status}"
+}
+
+if run_api_server; then
   exit 0
 fi
+status=$?
 
 if grep -q "Resource deadlock avoided" "${ERROR_LOG}" 2>/dev/null; then
   echo "detected bind-mount file lock, retrying api from runtime copy"
@@ -67,4 +95,4 @@ if grep -q "Resource deadlock avoided" "${ERROR_LOG}" 2>/dev/null; then
 fi
 
 cat "${ERROR_LOG}" >&2
-exit 1
+exit "${status}"
