@@ -137,7 +137,7 @@
           result = await predictClassification({
             timestamp: now.toISOString(),
             window: 24,
-            modelType: "gradient_boosting"
+            modelType: "best"
           });
         }
       }
