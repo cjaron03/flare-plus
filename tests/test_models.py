@@ -63,7 +63,7 @@ def sample_flare_events(db_session):
 @pytest.fixture
 def sample_features():
     """create sample feature dataframe."""
-    n_samples = 12
+    n_samples = 20
     timestamps = [datetime(2024, 1, 1, 12, 0, 0) + timedelta(hours=i) for i in range(n_samples)]
     features = {
         "timestamp": timestamps,
@@ -283,6 +283,115 @@ def test_evaluate_model(sample_features):
     assert "roc_auc" in results
     assert "classification_report" in results
     assert "confusion_matrix" in results
+
+
+def test_train_lightgbm(sample_features):
+    """test training lightgbm model."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3)
+
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
+    X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
+
+    model, info = trainer.train_lightgbm(X, y)
+
+    assert model is not None
+    assert "cv_mean" in info
+    assert info["model_type"] == "lightgbm"
+
+
+def test_train_random_forest(sample_features):
+    """test training random forest model."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3)
+
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
+    X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
+
+    model, info = trainer.train_random_forest(X, y)
+
+    assert model is not None
+    assert "cv_mean" in info
+    assert info["model_type"] == "random_forest"
+
+
+def test_train_baseline_models_all_types(sample_features):
+    """test training all model types via train_baseline_models."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3)
+
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
+
+    trained_models = trainer.train_baseline_models(
+        sample_features,
+        "label_24h",
+        models=["logistic", "gradient_boosting", "lightgbm", "random_forest"],
+    )
+
+    assert "logistic" in trained_models
+    assert "gradient_boosting" in trained_models
+    assert "lightgbm" in trained_models
+    assert "random_forest" in trained_models
+    assert "best" in trained_models
+
+    # verify best has selected_from key
+    _, best_info = trained_models["best"]
+    assert "selected_from" in best_info
+    assert best_info["selected_from"] in ["logistic", "gradient_boosting", "lightgbm", "random_forest"]
+
+
+def test_auto_select_best_model():
+    """test select_best_model static method."""
+    from unittest.mock import MagicMock
+
+    mock_model_a = MagicMock()
+    mock_model_b = MagicMock()
+
+    trained_models = {
+        "logistic": (mock_model_a, {"cv_mean": 0.80, "cv_f1_mean": 0.78}),
+        "gradient_boosting": (mock_model_b, {"cv_mean": 0.85, "cv_f1_mean": 0.83}),
+    }
+
+    result = ModelTrainer.select_best_model(trained_models)
+    assert result is not None
+    best_model, best_info = result
+    assert best_model is mock_model_b
+    assert best_info["selected_from"] == "gradient_boosting"
+
+    # test tie-break on F1
+    trained_models_tie = {
+        "logistic": (mock_model_a, {"cv_mean": 0.85, "cv_f1_mean": 0.90}),
+        "gradient_boosting": (mock_model_b, {"cv_mean": 0.85, "cv_f1_mean": 0.83}),
+    }
+
+    result_tie = ModelTrainer.select_best_model(trained_models_tie)
+    assert result_tie is not None
+    _, tie_info = result_tie
+    assert tie_info["selected_from"] == "logistic"
+
+
+def test_feature_selection(sample_features):
+    """test feature selection with mutual information."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3, use_feature_selection=True)
+
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
+
+    X, y, feature_names = trainer.prepare_features_and_labels(sample_features, "label_24h")
+
+    X_sel, sel_names = trainer.select_features(X, y, feature_names)
+
+    # should keep at least min_features=5 or all if fewer than 5
+    assert len(sel_names) >= min(5, len(feature_names))
+    assert X_sel.shape[1] == len(sel_names)
+    assert X_sel.shape[0] == X.shape[0]
+
+    # integration: verify train_baseline_models uses feature selection
+    trained_models = trainer.train_baseline_models(
+        sample_features,
+        "label_24h",
+        models=["logistic"],
+    )
+
+    assert "logistic" in trained_models
+    _, info = trained_models["logistic"]
+    assert "feature_names" in info
 
 
 def test_classification_pipeline_initialization():

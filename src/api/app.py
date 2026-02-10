@@ -197,7 +197,7 @@ def create_app(
             if timestamp.tzinfo is not None:
                 timestamp = timestamp.replace(tzinfo=None)
             window = data.get("window", 24)
-            model_type = data.get("model_type", "gradient_boosting")
+            model_type = data.get("model_type", "best")
             region_number = data.get("region_number")
 
             if window not in [24, 48]:

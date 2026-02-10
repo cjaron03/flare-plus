@@ -168,7 +168,7 @@ class ClassificationPipeline:
             dict with training and evaluation results
         """
         if models is None:
-            models = ["logistic", "gradient_boosting"]
+            models = ["logistic", "gradient_boosting", "lightgbm", "random_forest"]
 
         # start mlflow run if enabled
         mlflow_run = None
@@ -293,6 +293,16 @@ class ClassificationPipeline:
 
                     model, training_info = trained_models[model_type]
 
+                    # align test set to selected features when feature selection is active
+                    selected_feature_names = training_info.get("feature_names", feature_cols)
+                    if selected_feature_names != feature_cols:
+                        sel_indices = [feature_cols.index(f) for f in selected_feature_names]
+                        X_test_eval = X_test[:, sel_indices]
+                        X_train_eval = X_train[:, sel_indices]
+                    else:
+                        X_test_eval = X_test
+                        X_train_eval = X_train
+
                     # evaluate on test set
                     logger.info(f"evaluating {model_type} model...")
 
@@ -311,11 +321,11 @@ class ClassificationPipeline:
                     # fix: pass training data for calibration, test data for evaluation
                     evaluation_results = self.evaluator.evaluate_model(
                         model,
-                        X_test,
+                        X_test_eval,
                         y_test,
                         classes=classes,
                         calibrate=self.calibrate,
-                        X_calibration=X_train,  # use training data for calibration
+                        X_calibration=X_train_eval,  # use training data for calibration
                         y_calibration=y_train,  # use training labels for calibration
                         plot_reliability=plot_reliability,
                         reliability_filepath=reliability_filepath,
@@ -326,7 +336,7 @@ class ClassificationPipeline:
                         "training_info": training_info,
                         "evaluation_results": evaluation_results,
                         "label_encoder": label_encoder,
-                        "feature_names": feature_cols,
+                        "feature_names": selected_feature_names,
                     }
 
                     # log key metrics
@@ -373,6 +383,22 @@ class ClassificationPipeline:
                     logger.error(f"error training/evaluating {model_type}: {e}")
                     continue
 
+            # auto-select best model for this window
+            if window_results:
+                from src.models.training import ModelTrainer as _MT
+                best_candidates = {k: (v["model"], v["training_info"]) for k, v in window_results.items()}
+                best_result = _MT.select_best_model(best_candidates)
+                if best_result is not None:
+                    best_model, best_info = best_result
+                    selected_from = best_info.get("selected_from", "unknown")
+                    window_results["best"] = {
+                        "model": best_model,
+                        "training_info": best_info,
+                        "evaluation_results": window_results.get(selected_from, {}).get("evaluation_results", {}),
+                        "label_encoder": label_encoder,
+                        "feature_names": window_results.get(selected_from, {}).get("feature_names", feature_cols),
+                    }
+
             results[f"{window}h"] = window_results
 
         self.models = results
@@ -391,7 +417,7 @@ class ClassificationPipeline:
         self,
         timestamp: datetime,
         window: int,
-        model_type: str = "gradient_boosting",
+        model_type: str = "best",
         region_number: Optional[int] = None,
         include_explanation: bool = False,
     ) -> Dict[str, Any]:
@@ -401,7 +427,7 @@ class ClassificationPipeline:
         args:
             timestamp: timestamp to predict for
             window: prediction window in hours (24 or 48)
-            model_type: model type to use ('logistic' or 'gradient_boosting')
+            model_type: model type to use ('best', 'logistic', 'gradient_boosting', etc.)
             region_number: optional region number to filter by
             include_explanation: whether to include SHAP explanation
 
@@ -411,6 +437,10 @@ class ClassificationPipeline:
         window_key = f"{window}h"
         if window_key not in self.models:
             raise ValueError(f"no models trained for {window}h window")
+
+        # fallback from "best" to "gradient_boosting" if best not available
+        if model_type == "best" and "best" not in self.models[window_key]:
+            model_type = "gradient_boosting"
 
         if model_type not in self.models[window_key]:
             raise ValueError(f"model type {model_type} not found for {window}h window")

@@ -9,8 +9,10 @@ import pandas as pd
 import numpy as np
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.model_selection import StratifiedKFold
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+import lightgbm as lgb
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.pipeline import Pipeline as SkPipeline
 from sklearn.preprocessing import LabelEncoder
@@ -49,6 +51,8 @@ class ModelTrainer:
         use_smote: bool = True,
         cv_folds: int = 5,
         random_state: int = 42,
+        use_feature_selection: bool = False,
+        feature_selection_method: str = "mutual_info",
     ):
         """
         initialize model trainer.
@@ -57,10 +61,14 @@ class ModelTrainer:
             use_smote: whether to use smote for oversampling
             cv_folds: number of cross-validation folds
             random_state: random seed
+            use_feature_selection: whether to apply feature selection before training
+            feature_selection_method: feature selection method ('mutual_info')
         """
         self.use_smote = use_smote
         self.cv_folds = cv_folds
         self.random_state = random_state
+        self.use_feature_selection = use_feature_selection
+        self.feature_selection_method = feature_selection_method
         self.label_encoders: Dict[str, Any] = {}
         self.models: Dict[str, Any] = {}
         self.feature_names = None
@@ -110,6 +118,78 @@ class ModelTrainer:
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
         return X, y, feature_cols
+
+    def select_features(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: List[str],
+        threshold: float = 0.1,
+        min_features: int = 5,
+    ) -> Tuple[np.ndarray, List[str]]:
+        """
+        select features using mutual information.
+
+        args:
+            X: feature matrix
+            y: labels
+            feature_names: list of feature names
+            threshold: fraction of max score; features above threshold*max are kept
+            min_features: minimum number of features to keep
+
+        returns:
+            tuple of (filtered X, filtered feature_names)
+        """
+        scores = mutual_info_classif(X, y, random_state=self.random_state)
+        max_score = scores.max() if scores.max() > 0 else 1.0
+        cutoff = threshold * max_score
+
+        selected_mask = scores >= cutoff
+        # ensure we keep at least min_features
+        if selected_mask.sum() < min_features:
+            top_indices = np.argsort(scores)[::-1][:min_features]
+            selected_mask = np.zeros(len(scores), dtype=bool)
+            selected_mask[top_indices] = True
+
+        selected_names = [name for name, keep in zip(feature_names, selected_mask) if keep]
+        X_selected = X[:, selected_mask]
+
+        logger.info(
+            f"feature selection: kept {len(selected_names)}/{len(feature_names)} features"
+        )
+
+        return X_selected, selected_names
+
+    @staticmethod
+    def select_best_model(
+        trained_models: Dict[str, Tuple[Any, Dict[str, Any]]],
+    ) -> Optional[Tuple[Any, Dict[str, Any]]]:
+        """
+        select the best model across all types by accuracy, with F1 tie-break.
+
+        args:
+            trained_models: dict mapping model names to (model, training_info) tuples
+
+        returns:
+            (model, training_info) tuple for the best model, or None if no models
+        """
+        # skip alias keys
+        skip_keys = {"logistic_regression", "best"}
+        candidates = {k: v for k, v in trained_models.items() if k not in skip_keys}
+        if not candidates:
+            return None
+
+        best_key = max(
+            candidates,
+            key=lambda k: (
+                candidates[k][1].get("cv_mean", float("-inf")) or float("-inf"),
+                candidates[k][1].get("cv_f1_mean", float("-inf")) or float("-inf"),
+            ),
+        )
+        best_model, best_info = candidates[best_key]
+        best_info = dict(best_info)  # copy to avoid mutating original
+        best_info["selected_from"] = best_key
+        return best_model, best_info
 
     def _compute_class_weight(self, y: np.ndarray) -> Optional[Dict[int, float]]:
         """compute balanced class weights as a dict."""
@@ -191,6 +271,92 @@ class ModelTrainer:
 
         return candidates
 
+    def _build_lightgbm_model(
+        self,
+        params: Dict[str, Any],
+        class_weight: Optional[Dict[int, float]] = None,
+    ) -> lgb.LGBMClassifier:
+        """build a LightGBM classifier from params."""
+        return lgb.LGBMClassifier(
+            n_estimators=params["n_estimators"],
+            learning_rate=params["learning_rate"],
+            max_depth=params["max_depth"],
+            min_child_samples=params["min_child_samples"],
+            subsample=params["subsample"],
+            colsample_bytree=params["colsample_bytree"],
+            class_weight=class_weight,
+            random_state=self.random_state,
+            verbose=-1,
+        )
+
+    def _lightgbm_candidates(self) -> List[Dict[str, Any]]:
+        """return candidate hyperparameter combinations for LightGBM."""
+        estimator_lr_pairs = [
+            (150, 0.06),
+            (150, 0.1),
+            (300, 0.03),
+            (300, 0.06),
+            (500, 0.03),
+            (500, 0.06),
+        ]
+        depth_child_map = {
+            3: [5, 20],
+            5: [10, 20],
+        }
+
+        candidates: List[Dict[str, Any]] = []
+        for n_estimators, learning_rate in estimator_lr_pairs:
+            for max_depth, child_values in depth_child_map.items():
+                for min_child_samples in child_values:
+                    for subsample in [0.8, 1.0]:
+                        for colsample_bytree in [0.8, 1.0]:
+                            candidates.append(
+                                {
+                                    "n_estimators": n_estimators,
+                                    "learning_rate": learning_rate,
+                                    "max_depth": max_depth,
+                                    "min_child_samples": min_child_samples,
+                                    "subsample": subsample,
+                                    "colsample_bytree": colsample_bytree,
+                                }
+                            )
+
+        return candidates
+
+    def _build_random_forest_model(
+        self,
+        params: Dict[str, Any],
+        class_weight: Optional[Dict[int, float]] = None,
+    ) -> RandomForestClassifier:
+        """build a random forest classifier from params."""
+        return RandomForestClassifier(
+            n_estimators=params["n_estimators"],
+            max_depth=params["max_depth"],
+            min_samples_leaf=params["min_samples_leaf"],
+            max_features=params["max_features"],
+            class_weight=class_weight,
+            random_state=self.random_state,
+            verbose=0,
+        )
+
+    def _random_forest_candidates(self) -> List[Dict[str, Any]]:
+        """return candidate hyperparameter combinations for random forest."""
+        candidates: List[Dict[str, Any]] = []
+        for n_estimators in [100, 300, 500]:
+            for max_depth in [5, 10, None]:
+                for min_samples_leaf in [1, 5, 10, 20]:
+                    for max_features in ["sqrt", "log2", 0.5]:
+                        candidates.append(
+                            {
+                                "n_estimators": n_estimators,
+                                "max_depth": max_depth,
+                                "min_samples_leaf": min_samples_leaf,
+                                "max_features": max_features,
+                            }
+                        )
+
+        return candidates
+
     def _cross_validate_estimator(
         self,
         estimator: Any,
@@ -198,12 +364,21 @@ class ModelTrainer:
         y: np.ndarray,
         sample_weight: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """run stratified CV and return accuracy + weighted F1 arrays."""
-        cv = StratifiedKFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_state)
+        """run time-series CV and return accuracy + weighted F1 arrays."""
+        cv = TimeSeriesSplit(n_splits=self.cv_folds)
         cv_accuracy_scores: List[float] = []
         cv_f1_scores: List[float] = []
 
-        for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X, y), 1):
+        for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X), 1):
+            # warn when a fold is missing classes (e.g., rare flare types)
+            train_classes = set(np.unique(y[train_idx]))
+            val_classes = set(np.unique(y[val_idx]))
+            missing = val_classes - train_classes
+            if missing:
+                logger.warning(
+                    f"[{fold_idx}/{self.cv_folds}] validation fold contains classes "
+                    f"missing from training fold: {missing}"
+                )
             logger.info(f"[{fold_idx}/{self.cv_folds}] training cv fold...")
             X_train_cv, X_val_cv = X[train_idx], X[val_idx]
             y_train_cv, y_val_cv = y[train_idx], y[val_idx]
@@ -438,6 +613,190 @@ class ModelTrainer:
 
         return model, training_info
 
+    def train_lightgbm(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        use_class_weight: bool = True,
+    ) -> Tuple[lgb.LGBMClassifier, Dict[str, Any]]:
+        """
+        train LightGBM model.
+
+        args:
+            X: feature matrix
+            y: labels
+            use_class_weight: whether to use class weights for balancing
+
+        returns:
+            tuple of (trained model, training info)
+        """
+        balanced_class_weight = self._compute_class_weight(y) if use_class_weight else None
+        weighting_options: List[Tuple[str, Optional[Dict[int, float]]]] = [("none", None)]
+        if balanced_class_weight is not None:
+            weighting_options.append(("balanced", balanced_class_weight))
+
+        best_params: Optional[Dict[str, Any]] = None
+        best_cv_accuracy = -np.inf
+        best_cv_f1 = -np.inf
+        best_weighting = "none"
+        selected_class_weight: Optional[Dict[int, float]] = None
+        best_accuracy_scores = np.array([])
+        best_f1_scores = np.array([])
+
+        for weighting_name, class_weight in weighting_options:
+            for params in self._lightgbm_candidates():
+                logger.info(
+                    "evaluating lightgbm candidate: class_weight=%s, params=%s",
+                    weighting_name,
+                    params,
+                )
+                candidate_model = self._build_lightgbm_model(params, class_weight=class_weight)
+                cv_accuracy, cv_f1 = self._cross_validate_estimator(candidate_model, X, y)
+                logger.info(
+                    "lightgbm candidate class_weight=%s params=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    weighting_name,
+                    params,
+                    cv_accuracy.mean(),
+                    cv_f1.mean(),
+                )
+
+                if self._is_better_candidate(
+                    cv_accuracy,
+                    cv_f1,
+                    best_accuracy=best_cv_accuracy,
+                    best_f1=best_cv_f1,
+                ):
+                    best_cv_accuracy = float(cv_accuracy.mean())
+                    best_cv_f1 = float(cv_f1.mean())
+                    best_weighting = weighting_name
+                    best_params = params
+                    selected_class_weight = class_weight
+                    best_accuracy_scores = cv_accuracy
+                    best_f1_scores = cv_f1
+
+                if best_cv_accuracy >= 0.999:
+                    logger.info("early-stopping lightgbm search after reaching near-perfect cv accuracy")
+                    break
+
+            if best_cv_accuracy >= 0.999:
+                break
+
+        if best_params is None:
+            raise ValueError("failed to select lightgbm hyperparameters")
+
+        model = self._build_lightgbm_model(best_params, class_weight=selected_class_weight)
+        logger.info(
+            "fitting best lightgbm model on full data with class_weight=%s params=%s",
+            best_weighting,
+            best_params,
+        )
+        model.fit(X, y)
+
+        training_info = {
+            "model_type": "lightgbm",
+            "cv_mean": float(best_accuracy_scores.mean()),
+            "cv_std": float(best_accuracy_scores.std()),
+            "cv_scores": best_accuracy_scores.tolist(),
+            "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "selected_params": best_params,
+            "selected_weighting": best_weighting,
+            "class_weight": selected_class_weight,
+        }
+
+        return model, training_info
+
+    def train_random_forest(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        use_class_weight: bool = True,
+    ) -> Tuple[RandomForestClassifier, Dict[str, Any]]:
+        """
+        train random forest model.
+
+        args:
+            X: feature matrix
+            y: labels
+            use_class_weight: whether to use class weights for balancing
+
+        returns:
+            tuple of (trained model, training info)
+        """
+        balanced_class_weight = self._compute_class_weight(y) if use_class_weight else None
+        weighting_options: List[Tuple[str, Optional[Dict[int, float]]]] = [("none", None)]
+        if balanced_class_weight is not None:
+            weighting_options.append(("balanced", balanced_class_weight))
+
+        best_params: Optional[Dict[str, Any]] = None
+        best_cv_accuracy = -np.inf
+        best_cv_f1 = -np.inf
+        best_weighting = "none"
+        selected_class_weight: Optional[Dict[int, float]] = None
+        best_accuracy_scores = np.array([])
+        best_f1_scores = np.array([])
+
+        for weighting_name, class_weight in weighting_options:
+            for params in self._random_forest_candidates():
+                logger.info(
+                    "evaluating random forest candidate: class_weight=%s, params=%s",
+                    weighting_name,
+                    params,
+                )
+                candidate_model = self._build_random_forest_model(params, class_weight=class_weight)
+                cv_accuracy, cv_f1 = self._cross_validate_estimator(candidate_model, X, y)
+                logger.info(
+                    "random forest candidate class_weight=%s params=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    weighting_name,
+                    params,
+                    cv_accuracy.mean(),
+                    cv_f1.mean(),
+                )
+
+                if self._is_better_candidate(
+                    cv_accuracy,
+                    cv_f1,
+                    best_accuracy=best_cv_accuracy,
+                    best_f1=best_cv_f1,
+                ):
+                    best_cv_accuracy = float(cv_accuracy.mean())
+                    best_cv_f1 = float(cv_f1.mean())
+                    best_weighting = weighting_name
+                    best_params = params
+                    selected_class_weight = class_weight
+                    best_accuracy_scores = cv_accuracy
+                    best_f1_scores = cv_f1
+
+                if best_cv_accuracy >= 0.999:
+                    logger.info("early-stopping random forest search after reaching near-perfect cv accuracy")
+                    break
+
+            if best_cv_accuracy >= 0.999:
+                break
+
+        if best_params is None:
+            raise ValueError("failed to select random forest hyperparameters")
+
+        model = self._build_random_forest_model(best_params, class_weight=selected_class_weight)
+        logger.info(
+            "fitting best random forest model on full data with class_weight=%s params=%s",
+            best_weighting,
+            best_params,
+        )
+        model.fit(X, y)
+
+        training_info = {
+            "model_type": "random_forest",
+            "cv_mean": float(best_accuracy_scores.mean()),
+            "cv_std": float(best_accuracy_scores.std()),
+            "cv_scores": best_accuracy_scores.tolist(),
+            "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "selected_params": best_params,
+            "selected_weighting": best_weighting,
+            "class_weight": selected_class_weight,
+        }
+
+        return model, training_info
+
     def train_with_smote(
         self,
         X: np.ndarray,
@@ -450,7 +809,7 @@ class ModelTrainer:
         args:
             X: feature matrix
             y: labels
-            model_type: 'logistic' or 'gradient_boosting'
+            model_type: 'logistic', 'gradient_boosting', 'lightgbm', or 'random_forest'
 
         returns:
             tuple of (trained model, training info)
@@ -490,6 +849,50 @@ class ModelTrainer:
                     ),
                 )
                 for params in self._gradient_boosting_candidates()
+            ]
+        elif model_type == "lightgbm":
+            base_model = self._build_lightgbm_model(
+                {
+                    "n_estimators": 200,
+                    "learning_rate": 0.05,
+                    "max_depth": 3,
+                    "min_child_samples": 10,
+                    "subsample": 0.8,
+                    "colsample_bytree": 0.8,
+                }
+            )
+            candidate_pipelines = [
+                (
+                    params,
+                    ImbPipeline(
+                        [
+                            ("smote", SMOTE(random_state=self.random_state)),
+                            ("model", self._build_lightgbm_model(params)),
+                        ]
+                    ),
+                )
+                for params in self._lightgbm_candidates()
+            ]
+        elif model_type == "random_forest":
+            base_model = self._build_random_forest_model(
+                {
+                    "n_estimators": 200,
+                    "max_depth": 10,
+                    "min_samples_leaf": 5,
+                    "max_features": "sqrt",
+                }
+            )
+            candidate_pipelines = [
+                (
+                    params,
+                    ImbPipeline(
+                        [
+                            ("smote", SMOTE(random_state=self.random_state)),
+                            ("model", self._build_random_forest_model(params)),
+                        ]
+                    ),
+                )
+                for params in self._random_forest_candidates()
             ]
         else:
             raise ValueError(f"unknown model type: {model_type}")
@@ -564,6 +967,11 @@ class ModelTrainer:
         # prepare data
         X, y, feature_names = self.prepare_features_and_labels(features_df, label_column)
 
+        # optional feature selection
+        if self.use_feature_selection:
+            X, feature_names = self.select_features(X, y, feature_names)
+            self.feature_names = feature_names  # type: ignore[assignment]
+
         logger.info(
             f"training models on {len(X)} samples with {len(feature_names)} features"
         )
@@ -606,6 +1014,32 @@ class ModelTrainer:
                     )
                     trained_models["gradient_boosting"] = (model, info)
 
+                elif model_type == "lightgbm":
+                    model, info = self.train_lightgbm(X, y)
+                    candidates.append((model, info))
+                    if self.use_smote:
+                        smote_model, smote_info = self.train_with_smote(X, y, model_type="lightgbm")
+                        candidates.append((smote_model, smote_info))
+
+                    model, info = max(
+                        candidates,
+                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                    )
+                    trained_models["lightgbm"] = (model, info)
+
+                elif model_type == "random_forest":
+                    model, info = self.train_random_forest(X, y)
+                    candidates.append((model, info))
+                    if self.use_smote:
+                        smote_model, smote_info = self.train_with_smote(X, y, model_type="random_forest")
+                        candidates.append((smote_model, smote_info))
+
+                    model, info = max(
+                        candidates,
+                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                    )
+                    trained_models["random_forest"] = (model, info)
+
                 else:
                     logger.warning(f"unknown model type: {model_type}, skipping")
                     continue
@@ -617,6 +1051,19 @@ class ModelTrainer:
             except Exception as e:
                 logger.error(f"error training {model_type}: {e}")
                 continue
+
+        # store selected feature names in each training_info for downstream alignment
+        for key in trained_models:
+            trained_models[key][1]["feature_names"] = list(feature_names)
+
+        # auto-select best model across all types
+        best = self.select_best_model(trained_models)
+        if best is not None:
+            trained_models["best"] = best
+            logger.info(
+                f"auto-selected best model: {best[1].get('selected_from')} "
+                f"(cv accuracy={best[1].get('cv_mean', 0):.4f})"
+            )
 
         self.models[label_column] = trained_models
         return trained_models
