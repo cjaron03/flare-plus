@@ -9,6 +9,7 @@ from src.models.labeling import FlareLabeler
 from src.models.training import ModelTrainer
 from src.models.evaluation import ModelEvaluator
 from src.models.pipeline import ClassificationPipeline
+from src.models.ensemble import ProbabilityAveragingEnsemble
 
 
 def _balanced_labels(n_samples: int):
@@ -178,6 +179,21 @@ def test_train_logistic_regression(sample_features):
     assert info["model_type"] == "logistic_regression"
 
 
+def test_train_logistic_regression_with_single_class_early_folds():
+    """test logistic training when early time-series folds have one class."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3)
+
+    X = np.random.rand(20, 4)
+    # first folds contain only class 0, later folds include class 1
+    y = np.array([0] * 12 + [1] * 8)
+
+    model, info = trainer.train_logistic_regression(X, y, use_class_weight=False)
+
+    assert model is not None
+    assert "cv_scores" in info
+    assert len(info["cv_scores"]) >= 1
+
+
 def test_train_gradient_boosting(sample_features):
     """test training gradient boosting model."""
     trainer = ModelTrainer(use_smote=False, cv_folds=3)
@@ -283,6 +299,38 @@ def test_evaluate_model(sample_features):
     assert "roc_auc" in results
     assert "classification_report" in results
     assert "confusion_matrix" in results
+    assert "event_metrics" in results
+    assert "f1" in results["event_metrics"]
+
+
+def test_evaluate_model_with_missing_test_class(sample_features):
+    """evaluation should handle test splits where one class is absent."""
+    trainer = ModelTrainer(use_smote=False, cv_folds=3)
+
+    sample_features["label_24h"] = _balanced_labels(len(sample_features))
+
+    X, y, _ = trainer.prepare_features_and_labels(sample_features, "label_24h")
+    model, _ = trainer.train_logistic_regression(X, y)
+
+    # remove one class from the evaluation subset to mimic temporal holdout gaps
+    holdout_class = np.max(y)
+    mask = y != holdout_class
+    X_eval = X[mask]
+    y_eval = y[mask]
+
+    evaluator = ModelEvaluator()
+    results = evaluator.evaluate_model(
+        model,
+        X_eval,
+        y_eval,
+        classes=["None", "C", "M", "X"],
+        calibrate=False,
+    )
+
+    assert "classification_report" in results
+    assert "X" in results["classification_report"]
+    assert results["classification_report"]["X"]["support"] == 0.0
+    assert len(results["confusion_matrix"]) == 4
 
 
 def test_train_lightgbm(sample_features):
@@ -366,6 +414,22 @@ def test_auto_select_best_model():
     _, tie_info = result_tie
     assert tie_info["selected_from"] == "logistic"
 
+    # event-focused priority should beat higher raw accuracy
+    trained_models_event = {
+        "logistic": (
+            mock_model_a,
+            {"cv_mean": 0.82, "cv_f1_mean": 0.80, "cv_event_f1_mean": 0.72, "cv_event_recall_mean": 0.68},
+        ),
+        "gradient_boosting": (
+            mock_model_b,
+            {"cv_mean": 0.88, "cv_f1_mean": 0.86, "cv_event_f1_mean": 0.61, "cv_event_recall_mean": 0.59},
+        ),
+    }
+    result_event = ModelTrainer.select_best_model(trained_models_event)
+    assert result_event is not None
+    _, event_info = result_event
+    assert event_info["selected_from"] == "logistic"
+
 
 def test_feature_selection(sample_features):
     """test feature selection with mutual information."""
@@ -403,3 +467,88 @@ def test_classification_pipeline_initialization():
     assert pipeline.labeler is not None
     assert pipeline.trainer is not None
     assert pipeline.evaluator is not None
+
+
+def test_classification_pipeline_chronological_split():
+    """test that pipeline split preserves chronological order."""
+    pipeline = ClassificationPipeline(use_smote=False, cv_folds=3)
+
+    X = np.arange(20).reshape(-1, 1)
+    y = np.arange(20)
+
+    X_train, X_test, y_train, y_test = pipeline._chronological_train_test_split(
+        X,
+        y,
+        test_size=0.2,
+    )
+
+    assert len(X_train) == 16
+    assert len(X_test) == 4
+    assert y_train.tolist() == list(range(16))
+    assert y_test.tolist() == list(range(16, 20))
+
+
+def test_probability_averaging_ensemble():
+    """ensemble should average probabilities and expose argmax predictions."""
+
+    class _MockModel:
+        def __init__(self, probs):
+            self._probs = np.asarray(probs, dtype=float)
+
+        def predict_proba(self, X):
+            return np.tile(self._probs, (len(X), 1))
+
+    model_a = _MockModel([0.8, 0.2])
+    model_b = _MockModel([0.4, 0.6])
+    ensemble = ProbabilityAveragingEnsemble([model_a, model_b], model_names=["a", "b"])
+
+    X = np.array([[1.0], [2.0]])
+    probs = ensemble.predict_proba(X)
+    preds = ensemble.predict(X)
+
+    assert probs.shape == (2, 2)
+    assert np.allclose(probs[0], np.array([0.6, 0.4]))
+    assert preds.tolist() == [0, 0]
+
+
+def test_classification_pipeline_predict_uses_feature_fill_values(monkeypatch):
+    """predict should use per-feature fill defaults instead of hard-coded zeros."""
+    from sklearn.preprocessing import LabelEncoder
+
+    class _DummyModel:
+        def __init__(self):
+            self.last_X = None
+
+        def predict(self, X):
+            self.last_X = X
+            return np.array([1])
+
+        def predict_proba(self, X):
+            self.last_X = X
+            return np.array([[0.2, 0.8]])
+
+    pipeline = ClassificationPipeline(use_smote=False, cv_folds=3)
+    dummy_model = _DummyModel()
+    encoder = LabelEncoder()
+    encoder.fit(["None", "M"])
+
+    target_time = datetime(2024, 1, 5, 0, 0, 0)
+    pipeline.models = {
+        "24h": {
+            "best": {
+                "model": dummy_model,
+                "label_encoder": encoder,
+                "feature_names": ["feature_a", "feature_b"],
+                "feature_fill_values": {"feature_b": 7.5},
+            }
+        }
+    }
+
+    feature_frame = pd.DataFrame([{"timestamp": target_time, "feature_a": 1.25}])
+    monkeypatch.setattr(pipeline.feature_engineer, "compute_features", lambda *args, **kwargs: feature_frame)
+
+    result = pipeline.predict(timestamp=target_time, window=24, model_type="best")
+
+    assert result["predicted_class"] in {"None", "M"}
+    assert dummy_model.last_X is not None
+    assert float(dummy_model.last_X[0, 1]) == pytest.approx(7.5)

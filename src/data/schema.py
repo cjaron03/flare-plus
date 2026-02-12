@@ -263,3 +263,63 @@ class SolarFlareEvent(Base):  # type: ignore[misc,valid-type]
 
     def __repr__(self):
         return f"<SolarFlareEvent(external_id={self.external_id}, source={self.source}, peak_time={self.peak_time})>"
+
+
+class NoaaRealtimeLog(Base):  # type: ignore[misc,valid-type]
+    """daily realtime benchmark log for flare+ vs NOAA forecasts."""
+
+    __tablename__ = "flare_noaa_realtime_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # identity of a forecast row
+    model_tag = Column(String(100), nullable=False, index=True)
+    model_type = Column(String(50), nullable=False)
+    model_path = Column(String(500), nullable=True)
+    target_class = Column(String(1), nullable=False)
+    horizon_days = Column(Integer, nullable=False)
+    forecast_date = Column(DateTime, nullable=False, index=True)
+
+    # timing / audit
+    forecast_generated_at = Column(DateTime, nullable=False, index=True)
+    last_sync_at = Column(DateTime, default=datetime.utcnow, index=True)
+    is_backfill = Column(Boolean, default=False, nullable=False)
+
+    # probabilities / decisions
+    noaa_endpoint = Column(String(500), nullable=True)
+    noaa_probability = Column(Float, nullable=True)
+    flare_probability = Column(Float, nullable=True)
+    noaa_threshold = Column(Float, nullable=True)
+    flare_threshold = Column(Float, nullable=True)
+    noaa_predicted_event = Column(Boolean, nullable=True)
+    flare_predicted_event = Column(Boolean, nullable=True)
+    flare_predicted_class = Column(String(10), nullable=True)
+    prediction_error = Column(String(500), nullable=True)
+
+    # outcome window and realized labels
+    outcome_window_start = Column(DateTime, nullable=False)
+    outcome_window_end = Column(DateTime, nullable=False)
+    actual_event = Column(Boolean, nullable=True, index=True)
+    actual_event_count = Column(Integer, nullable=True)
+    actual_first_event_time = Column(DateTime, nullable=True)
+    actual_resolved_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "model_tag",
+            "forecast_date",
+            "target_class",
+            "horizon_days",
+            name="uq_noaa_realtime_model_forecast_target_horizon",
+        ),
+        Index("ix_noaa_realtime_target_forecast", "target_class", "forecast_date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NoaaRealtimeLog(model_tag={self.model_tag}, forecast_date={self.forecast_date}, "
+            f"target_class={self.target_class}, horizon_days={self.horizon_days})>"
+        )

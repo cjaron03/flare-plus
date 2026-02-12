@@ -13,7 +13,7 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 import lightgbm as lgb
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, recall_score
 from sklearn.pipeline import Pipeline as SkPipeline
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
@@ -72,6 +72,7 @@ class ModelTrainer:
         self.label_encoders: Dict[str, Any] = {}
         self.models: Dict[str, Any] = {}
         self.feature_names = None
+        self.none_class_id: Optional[int] = None
 
     def prepare_features_and_labels(
         self,
@@ -114,10 +115,74 @@ class ModelTrainer:
         else:
             y = self.label_encoders[label_column].transform(y)
 
+        classes = self.label_encoders[label_column].classes_.tolist()
+        if "None" in classes:
+            self.none_class_id = int(self.label_encoders[label_column].transform(["None"])[0])
+        else:
+            self.none_class_id = None
+
         # handle missing values
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
         return X, y, feature_cols
+
+    @staticmethod
+    def _metric_or_neg_inf(value: Any) -> float:
+        """Safely convert possibly missing metric to a sortable float."""
+        if value is None:
+            return float("-inf")
+        try:
+            metric = float(value)
+        except (TypeError, ValueError):
+            return float("-inf")
+        if np.isnan(metric):
+            return float("-inf")
+        return metric
+
+    @staticmethod
+    def _safe_nanmean(values: np.ndarray) -> float:
+        """Compute nanmean without raising warnings when all values are NaN."""
+        if len(values) == 0:
+            return np.nan
+        if np.isnan(values).all():
+            return np.nan
+        return float(np.nanmean(values))
+
+    @classmethod
+    def _model_selection_sort_key(cls, info: Dict[str, Any]) -> Tuple[float, float, float, float, float]:
+        """
+        Build a deterministic ranking key for event-focused model selection.
+
+        Priority:
+        1. event F1
+        2. event recall
+        3. calibrated brier (lower is better)
+        4. weighted F1
+        5. accuracy
+        """
+        event_f1 = cls._metric_or_neg_inf(info.get("test_event_f1"))
+        if event_f1 == float("-inf"):
+            event_f1 = cls._metric_or_neg_inf(info.get("cv_event_f1_mean"))
+
+        event_recall = cls._metric_or_neg_inf(info.get("test_event_recall"))
+        if event_recall == float("-inf"):
+            event_recall = cls._metric_or_neg_inf(info.get("cv_event_recall_mean"))
+
+        brier = info.get("test_brier_macro_calibrated")
+        if brier is None:
+            brier = info.get("test_brier_macro")
+        brier_metric = cls._metric_or_neg_inf(brier)
+        brier_key = -brier_metric if brier_metric != float("-inf") else float("-inf")
+
+        weighted_f1 = cls._metric_or_neg_inf(info.get("test_weighted_f1"))
+        if weighted_f1 == float("-inf"):
+            weighted_f1 = cls._metric_or_neg_inf(info.get("cv_f1_mean"))
+
+        accuracy = cls._metric_or_neg_inf(info.get("test_accuracy"))
+        if accuracy == float("-inf"):
+            accuracy = cls._metric_or_neg_inf(info.get("cv_mean"))
+
+        return (event_f1, event_recall, brier_key, weighted_f1, accuracy)
 
     def select_features(
         self,
@@ -165,7 +230,7 @@ class ModelTrainer:
         trained_models: Dict[str, Tuple[Any, Dict[str, Any]]],
     ) -> Optional[Tuple[Any, Dict[str, Any]]]:
         """
-        select the best model across all types by accuracy, with F1 tie-break.
+        select the best model across all types using event-focused ranking.
 
         args:
             trained_models: dict mapping model names to (model, training_info) tuples
@@ -181,10 +246,7 @@ class ModelTrainer:
 
         best_key = max(
             candidates,
-            key=lambda k: (
-                candidates[k][1].get("cv_mean", float("-inf")) or float("-inf"),
-                candidates[k][1].get("cv_f1_mean", float("-inf")) or float("-inf"),
-            ),
+            key=lambda k: ModelTrainer._model_selection_sort_key(candidates[k][1]),
         )
         best_model, best_info = candidates[best_key]
         best_info = dict(best_info)  # copy to avoid mutating original
@@ -363,15 +425,25 @@ class ModelTrainer:
         X: np.ndarray,
         y: np.ndarray,
         sample_weight: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """run time-series CV and return accuracy + weighted F1 arrays."""
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """run time-series CV and return arrays for accuracy/F1/event-F1/event-recall."""
         cv = TimeSeriesSplit(n_splits=self.cv_folds)
         cv_accuracy_scores: List[float] = []
         cv_f1_scores: List[float] = []
+        cv_event_f1_scores: List[float] = []
+        cv_event_recall_scores: List[float] = []
 
         for fold_idx, (train_idx, val_idx) in enumerate(cv.split(X), 1):
             # warn when a fold is missing classes (e.g., rare flare types)
-            train_classes = set(np.unique(y[train_idx]))
+            train_classes_array = np.unique(y[train_idx])
+            if len(train_classes_array) < 2:
+                logger.warning(
+                    f"[{fold_idx}/{self.cv_folds}] skipping cv fold: "
+                    f"training fold has only one class {train_classes_array.tolist()}"
+                )
+                continue
+
+            train_classes = set(train_classes_array)
             val_classes = set(np.unique(y[val_idx]))
             missing = val_classes - train_classes
             if missing:
@@ -392,27 +464,63 @@ class ModelTrainer:
             y_pred_cv = model_cv.predict(X_val_cv)
             cv_accuracy_scores.append(float(accuracy_score(y_val_cv, y_pred_cv)))
             cv_f1_scores.append(float(f1_score(y_val_cv, y_pred_cv, average="weighted", zero_division=0)))
+            if self.none_class_id is not None:
+                y_val_event = (y_val_cv != self.none_class_id).astype(int)
+                y_pred_event = (y_pred_cv != self.none_class_id).astype(int)
+                cv_event_f1_scores.append(float(f1_score(y_val_event, y_pred_event, zero_division=0)))
+                cv_event_recall_scores.append(
+                    float(recall_score(y_val_event, y_pred_event, zero_division=0))
+                )
             logger.info(
                 f"[{fold_idx}/{self.cv_folds}] fold accuracy: {cv_accuracy_scores[-1]:.4f}, "
                 f"weighted f1: {cv_f1_scores[-1]:.4f}"
             )
 
-        return np.array(cv_accuracy_scores), np.array(cv_f1_scores)
+        if not cv_accuracy_scores:
+            raise ValueError(
+                "no valid time-series CV folds available: each training fold had fewer than 2 classes"
+            )
+
+        if self.none_class_id is None:
+            cv_event_f1_scores = [np.nan] * len(cv_accuracy_scores)
+            cv_event_recall_scores = [np.nan] * len(cv_accuracy_scores)
+
+        return (
+            np.array(cv_accuracy_scores),
+            np.array(cv_f1_scores),
+            np.array(cv_event_f1_scores, dtype=float),
+            np.array(cv_event_recall_scores, dtype=float),
+        )
 
     @staticmethod
     def _is_better_candidate(
         candidate_accuracy: np.ndarray,
         candidate_f1: np.ndarray,
+        candidate_event_f1: np.ndarray,
+        candidate_event_recall: np.ndarray,
         best_accuracy: float,
         best_f1: float,
+        best_event_f1: float,
+        best_event_recall: float,
         tolerance: float = 1e-6,
     ) -> bool:
-        """prefer higher accuracy; break near-ties with weighted F1."""
+        """prefer higher event F1/recall; fall back to accuracy and weighted F1."""
         if len(candidate_accuracy) == 0:
             return False
 
         candidate_accuracy_mean = float(candidate_accuracy.mean())
         candidate_f1_mean = float(candidate_f1.mean()) if len(candidate_f1) else float("-inf")
+        candidate_event_f1_mean = ModelTrainer._safe_nanmean(candidate_event_f1)
+        candidate_event_recall_mean = ModelTrainer._safe_nanmean(candidate_event_recall)
+        has_event_metric = not np.isnan(candidate_event_f1_mean)
+        best_has_event_metric = not np.isnan(best_event_f1)
+
+        if has_event_metric:
+            if (not best_has_event_metric) or candidate_event_f1_mean > best_event_f1 + tolerance:
+                return True
+            if abs(candidate_event_f1_mean - best_event_f1) <= tolerance:
+                if np.isnan(best_event_recall) or candidate_event_recall_mean > best_event_recall + tolerance:
+                    return True
 
         if candidate_accuracy_mean > best_accuracy + tolerance:
             return True
@@ -447,38 +555,53 @@ class ModelTrainer:
 
         best_cv_accuracy = -np.inf
         best_cv_f1 = -np.inf
+        best_cv_event_f1 = np.nan
+        best_cv_event_recall = np.nan
         best_c = 1.0
         best_weighting = "none"
         selected_class_weight: Optional[Dict[int, float]] = None
         best_accuracy_scores = np.array([])
         best_f1_scores = np.array([])
+        best_event_f1_scores = np.array([])
+        best_event_recall_scores = np.array([])
 
         for weighting_name, class_weight in weighting_options:
             for c in candidate_cs:
                 logger.info(f"evaluating logistic regression candidate: class_weight={weighting_name}, C={c}")
                 candidate_model = self._build_logistic_pipeline(c=c, class_weight=class_weight)
-                cv_accuracy, cv_f1 = self._cross_validate_estimator(candidate_model, X, y)
+                cv_accuracy, cv_f1, cv_event_f1, cv_event_recall = self._cross_validate_estimator(
+                    candidate_model, X, y
+                )
                 logger.info(
-                    "logistic candidate class_weight=%s C=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    "logistic candidate class_weight=%s C=%s: cv accuracy=%.4f, cv weighted f1=%.4f, cv event f1=%.4f",
                     weighting_name,
                     c,
                     cv_accuracy.mean(),
                     cv_f1.mean(),
+                    self._safe_nanmean(cv_event_f1),
                 )
 
                 if self._is_better_candidate(
                     cv_accuracy,
                     cv_f1,
+                    cv_event_f1,
+                    cv_event_recall,
                     best_accuracy=best_cv_accuracy,
                     best_f1=best_cv_f1,
+                    best_event_f1=best_cv_event_f1,
+                    best_event_recall=best_cv_event_recall,
                 ):
                     best_cv_accuracy = float(cv_accuracy.mean())
                     best_cv_f1 = float(cv_f1.mean())
+                    best_cv_event_f1 = self._safe_nanmean(cv_event_f1)
+                    best_cv_event_recall = self._safe_nanmean(cv_event_recall)
                     best_c = c
                     best_weighting = weighting_name
                     selected_class_weight = class_weight
                     best_accuracy_scores = cv_accuracy
                     best_f1_scores = cv_f1
+                    best_event_f1_scores = cv_event_f1
+                    best_event_recall_scores = cv_event_recall
 
                 if best_cv_accuracy >= 0.999:
                     logger.info("early-stopping logistic search after reaching near-perfect cv accuracy")
@@ -501,6 +624,10 @@ class ModelTrainer:
             "cv_std": float(best_accuracy_scores.std()),
             "cv_scores": best_accuracy_scores.tolist(),
             "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "cv_event_f1_mean": self._safe_nanmean(best_event_f1_scores) if len(best_event_f1_scores) else None,
+            "cv_event_recall_mean": (
+                self._safe_nanmean(best_event_recall_scores) if len(best_event_recall_scores) else None
+            ),
             "selected_c": best_c,
             "selected_weighting": best_weighting,
             "class_weight": selected_class_weight,
@@ -536,11 +663,15 @@ class ModelTrainer:
         best_params: Optional[Dict[str, Any]] = None
         best_cv_accuracy = -np.inf
         best_cv_f1 = -np.inf
+        best_cv_event_f1 = np.nan
+        best_cv_event_recall = np.nan
         best_weighting = "none"
         selected_sample_weight: Optional[np.ndarray] = None
         selected_class_weight: Optional[Dict[int, float]] = None
         best_accuracy_scores = np.array([])
         best_f1_scores = np.array([])
+        best_event_f1_scores = np.array([])
+        best_event_recall_scores = np.array([])
 
         for weighting_name, sample_weight, class_weight in weighting_options:
             for params in self._gradient_boosting_candidates():
@@ -550,34 +681,44 @@ class ModelTrainer:
                     params,
                 )
                 candidate_model = self._build_gradient_boosting_model(params)
-                cv_accuracy, cv_f1 = self._cross_validate_estimator(
+                cv_accuracy, cv_f1, cv_event_f1, cv_event_recall = self._cross_validate_estimator(
                     candidate_model,
                     X,
                     y,
                     sample_weight=sample_weight,
                 )
                 logger.info(
-                    "gradient candidate class_weight=%s params=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    "gradient candidate class_weight=%s params=%s: "
+                    "cv accuracy=%.4f, cv weighted f1=%.4f, cv event f1=%.4f",
                     weighting_name,
                     params,
                     cv_accuracy.mean(),
                     cv_f1.mean(),
+                    self._safe_nanmean(cv_event_f1),
                 )
 
                 if self._is_better_candidate(
                     cv_accuracy,
                     cv_f1,
+                    cv_event_f1,
+                    cv_event_recall,
                     best_accuracy=best_cv_accuracy,
                     best_f1=best_cv_f1,
+                    best_event_f1=best_cv_event_f1,
+                    best_event_recall=best_cv_event_recall,
                 ):
                     best_cv_accuracy = float(cv_accuracy.mean())
                     best_cv_f1 = float(cv_f1.mean())
+                    best_cv_event_f1 = self._safe_nanmean(cv_event_f1)
+                    best_cv_event_recall = self._safe_nanmean(cv_event_recall)
                     best_weighting = weighting_name
                     best_params = params
                     selected_sample_weight = sample_weight
                     selected_class_weight = class_weight
                     best_accuracy_scores = cv_accuracy
                     best_f1_scores = cv_f1
+                    best_event_f1_scores = cv_event_f1
+                    best_event_recall_scores = cv_event_recall
 
                 if best_cv_accuracy >= 0.999:
                     logger.info("early-stopping gradient boosting search after reaching near-perfect cv accuracy")
@@ -606,6 +747,10 @@ class ModelTrainer:
             "cv_std": float(best_accuracy_scores.std()),
             "cv_scores": best_accuracy_scores.tolist(),
             "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "cv_event_f1_mean": self._safe_nanmean(best_event_f1_scores) if len(best_event_f1_scores) else None,
+            "cv_event_recall_mean": (
+                self._safe_nanmean(best_event_recall_scores) if len(best_event_recall_scores) else None
+            ),
             "selected_params": best_params,
             "selected_weighting": best_weighting,
             "class_weight": selected_class_weight,
@@ -638,10 +783,14 @@ class ModelTrainer:
         best_params: Optional[Dict[str, Any]] = None
         best_cv_accuracy = -np.inf
         best_cv_f1 = -np.inf
+        best_cv_event_f1 = np.nan
+        best_cv_event_recall = np.nan
         best_weighting = "none"
         selected_class_weight: Optional[Dict[int, float]] = None
         best_accuracy_scores = np.array([])
         best_f1_scores = np.array([])
+        best_event_f1_scores = np.array([])
+        best_event_recall_scores = np.array([])
 
         for weighting_name, class_weight in weighting_options:
             for params in self._lightgbm_candidates():
@@ -651,28 +800,40 @@ class ModelTrainer:
                     params,
                 )
                 candidate_model = self._build_lightgbm_model(params, class_weight=class_weight)
-                cv_accuracy, cv_f1 = self._cross_validate_estimator(candidate_model, X, y)
+                cv_accuracy, cv_f1, cv_event_f1, cv_event_recall = self._cross_validate_estimator(
+                    candidate_model, X, y
+                )
                 logger.info(
-                    "lightgbm candidate class_weight=%s params=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    "lightgbm candidate class_weight=%s params=%s: "
+                    "cv accuracy=%.4f, cv weighted f1=%.4f, cv event f1=%.4f",
                     weighting_name,
                     params,
                     cv_accuracy.mean(),
                     cv_f1.mean(),
+                    self._safe_nanmean(cv_event_f1),
                 )
 
                 if self._is_better_candidate(
                     cv_accuracy,
                     cv_f1,
+                    cv_event_f1,
+                    cv_event_recall,
                     best_accuracy=best_cv_accuracy,
                     best_f1=best_cv_f1,
+                    best_event_f1=best_cv_event_f1,
+                    best_event_recall=best_cv_event_recall,
                 ):
                     best_cv_accuracy = float(cv_accuracy.mean())
                     best_cv_f1 = float(cv_f1.mean())
+                    best_cv_event_f1 = self._safe_nanmean(cv_event_f1)
+                    best_cv_event_recall = self._safe_nanmean(cv_event_recall)
                     best_weighting = weighting_name
                     best_params = params
                     selected_class_weight = class_weight
                     best_accuracy_scores = cv_accuracy
                     best_f1_scores = cv_f1
+                    best_event_f1_scores = cv_event_f1
+                    best_event_recall_scores = cv_event_recall
 
                 if best_cv_accuracy >= 0.999:
                     logger.info("early-stopping lightgbm search after reaching near-perfect cv accuracy")
@@ -698,6 +859,10 @@ class ModelTrainer:
             "cv_std": float(best_accuracy_scores.std()),
             "cv_scores": best_accuracy_scores.tolist(),
             "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "cv_event_f1_mean": self._safe_nanmean(best_event_f1_scores) if len(best_event_f1_scores) else None,
+            "cv_event_recall_mean": (
+                self._safe_nanmean(best_event_recall_scores) if len(best_event_recall_scores) else None
+            ),
             "selected_params": best_params,
             "selected_weighting": best_weighting,
             "class_weight": selected_class_weight,
@@ -730,10 +895,14 @@ class ModelTrainer:
         best_params: Optional[Dict[str, Any]] = None
         best_cv_accuracy = -np.inf
         best_cv_f1 = -np.inf
+        best_cv_event_f1 = np.nan
+        best_cv_event_recall = np.nan
         best_weighting = "none"
         selected_class_weight: Optional[Dict[int, float]] = None
         best_accuracy_scores = np.array([])
         best_f1_scores = np.array([])
+        best_event_f1_scores = np.array([])
+        best_event_recall_scores = np.array([])
 
         for weighting_name, class_weight in weighting_options:
             for params in self._random_forest_candidates():
@@ -743,28 +912,40 @@ class ModelTrainer:
                     params,
                 )
                 candidate_model = self._build_random_forest_model(params, class_weight=class_weight)
-                cv_accuracy, cv_f1 = self._cross_validate_estimator(candidate_model, X, y)
+                cv_accuracy, cv_f1, cv_event_f1, cv_event_recall = self._cross_validate_estimator(
+                    candidate_model, X, y
+                )
                 logger.info(
-                    "random forest candidate class_weight=%s params=%s: cv accuracy=%.4f, cv weighted f1=%.4f",
+                    "random forest candidate class_weight=%s params=%s: "
+                    "cv accuracy=%.4f, cv weighted f1=%.4f, cv event f1=%.4f",
                     weighting_name,
                     params,
                     cv_accuracy.mean(),
                     cv_f1.mean(),
+                    self._safe_nanmean(cv_event_f1),
                 )
 
                 if self._is_better_candidate(
                     cv_accuracy,
                     cv_f1,
+                    cv_event_f1,
+                    cv_event_recall,
                     best_accuracy=best_cv_accuracy,
                     best_f1=best_cv_f1,
+                    best_event_f1=best_cv_event_f1,
+                    best_event_recall=best_cv_event_recall,
                 ):
                     best_cv_accuracy = float(cv_accuracy.mean())
                     best_cv_f1 = float(cv_f1.mean())
+                    best_cv_event_f1 = self._safe_nanmean(cv_event_f1)
+                    best_cv_event_recall = self._safe_nanmean(cv_event_recall)
                     best_weighting = weighting_name
                     best_params = params
                     selected_class_weight = class_weight
                     best_accuracy_scores = cv_accuracy
                     best_f1_scores = cv_f1
+                    best_event_f1_scores = cv_event_f1
+                    best_event_recall_scores = cv_event_recall
 
                 if best_cv_accuracy >= 0.999:
                     logger.info("early-stopping random forest search after reaching near-perfect cv accuracy")
@@ -790,6 +971,10 @@ class ModelTrainer:
             "cv_std": float(best_accuracy_scores.std()),
             "cv_scores": best_accuracy_scores.tolist(),
             "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "cv_event_f1_mean": self._safe_nanmean(best_event_f1_scores) if len(best_event_f1_scores) else None,
+            "cv_event_recall_mean": (
+                self._safe_nanmean(best_event_recall_scores) if len(best_event_recall_scores) else None
+            ),
             "selected_params": best_params,
             "selected_weighting": best_weighting,
             "class_weight": selected_class_weight,
@@ -901,24 +1086,38 @@ class ModelTrainer:
         best_pipeline = None
         best_accuracy_scores = np.array([])
         best_f1_scores = np.array([])
+        best_event_f1_scores = np.array([])
+        best_event_recall_scores = np.array([])
         best_cv_accuracy = -np.inf
         best_cv_f1 = -np.inf
+        best_cv_event_f1 = np.nan
+        best_cv_event_recall = np.nan
 
         for candidate_key, pipeline in candidate_pipelines:
             logger.info(f"evaluating {model_type} + smote candidate: {candidate_key}")
-            cv_accuracy, cv_f1 = self._cross_validate_estimator(pipeline, X, y)
+            cv_accuracy, cv_f1, cv_event_f1, cv_event_recall = self._cross_validate_estimator(
+                pipeline, X, y
+            )
             if self._is_better_candidate(
                 cv_accuracy,
                 cv_f1,
+                cv_event_f1,
+                cv_event_recall,
                 best_accuracy=best_cv_accuracy,
                 best_f1=best_cv_f1,
+                best_event_f1=best_cv_event_f1,
+                best_event_recall=best_cv_event_recall,
             ):
                 best_cv_accuracy = float(cv_accuracy.mean())
                 best_cv_f1 = float(cv_f1.mean())
+                best_cv_event_f1 = self._safe_nanmean(cv_event_f1)
+                best_cv_event_recall = self._safe_nanmean(cv_event_recall)
                 best_key = candidate_key
                 best_pipeline = pipeline
                 best_accuracy_scores = cv_accuracy
                 best_f1_scores = cv_f1
+                best_event_f1_scores = cv_event_f1
+                best_event_recall_scores = cv_event_recall
             if best_cv_accuracy >= 0.999:
                 logger.info(f"early-stopping {model_type} + smote search after near-perfect cv accuracy")
                 break
@@ -938,6 +1137,10 @@ class ModelTrainer:
             "cv_std": float(best_accuracy_scores.std()) if len(best_accuracy_scores) else None,
             "cv_scores": best_accuracy_scores.tolist(),
             "cv_f1_mean": float(best_f1_scores.mean()) if len(best_f1_scores) else None,
+            "cv_event_f1_mean": self._safe_nanmean(best_event_f1_scores) if len(best_event_f1_scores) else None,
+            "cv_event_recall_mean": (
+                self._safe_nanmean(best_event_recall_scores) if len(best_event_recall_scores) else None
+            ),
             "selected_candidate": best_key,
             "use_smote": True,
         }
@@ -995,7 +1198,7 @@ class ModelTrainer:
 
                     model, info = max(
                         candidates,
-                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                        key=lambda item: self._model_selection_sort_key(item[1]),
                     )
                     # use consistent key name for lookup
                     trained_models["logistic"] = (model, info)
@@ -1010,7 +1213,7 @@ class ModelTrainer:
 
                     model, info = max(
                         candidates,
-                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                        key=lambda item: self._model_selection_sort_key(item[1]),
                     )
                     trained_models["gradient_boosting"] = (model, info)
 
@@ -1023,7 +1226,7 @@ class ModelTrainer:
 
                     model, info = max(
                         candidates,
-                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                        key=lambda item: self._model_selection_sort_key(item[1]),
                     )
                     trained_models["lightgbm"] = (model, info)
 
@@ -1036,7 +1239,7 @@ class ModelTrainer:
 
                     model, info = max(
                         candidates,
-                        key=lambda item: item[1].get("cv_mean", float("-inf")) or float("-inf"),
+                        key=lambda item: self._model_selection_sort_key(item[1]),
                     )
                     trained_models["random_forest"] = (model, info)
 
@@ -1062,7 +1265,8 @@ class ModelTrainer:
             trained_models["best"] = best
             logger.info(
                 f"auto-selected best model: {best[1].get('selected_from')} "
-                f"(cv accuracy={best[1].get('cv_mean', 0):.4f})"
+                f"(event_f1={best[1].get('test_event_f1', best[1].get('cv_event_f1_mean'))}, "
+                f"accuracy={best[1].get('test_accuracy', best[1].get('cv_mean', 0))})"
             )
 
         self.models[label_column] = trained_models

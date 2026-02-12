@@ -127,6 +127,16 @@ def test_rolling_statistics():
     assert "value_24h_mean" in result
 
 
+def test_rolling_statistics_empty_data_still_emits_schema():
+    """empty windows should still emit expected feature keys."""
+    result = compute_rolling_statistics(pd.DataFrame(), datetime.now(), "value", [6, 12], ["mean", "max"])
+    assert "value_6h_mean" in result
+    assert "value_6h_max" in result
+    assert "value_12h_mean" in result
+    assert "value_12h_max" in result
+    assert result["value_6h_mean"] is None
+
+
 def test_recency_weighted_flare_counts():
     """test recency-weighted flare counts."""
     timestamps = [datetime.now() - timedelta(hours=i) for i in range(24, 0, -1)]
@@ -141,6 +151,14 @@ def test_recency_weighted_flare_counts():
     assert "flare_C_6h_count" in result
     assert "flare_C_6h_weighted_count" in result
     assert result["flare_C_6h_count"] >= 0
+
+
+def test_recency_weighted_flare_counts_empty_data_still_emits_schema():
+    """empty flare history should return zeroed count features."""
+    result = compute_recency_weighted_flare_counts(pd.DataFrame(), datetime.now(), ["C", "M"], [6, 12])
+    assert result["flare_C_6h_count"] == 0
+    assert result["flare_M_12h_weighted_count"] == 0.0
+    assert result["flare_total_6h_weighted_count"] == 0.0
 
 
 def test_normalize_features():

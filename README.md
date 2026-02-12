@@ -6,6 +6,8 @@ a machine learning system for predicting solar flares using noaa/swpc data.
 
 flare+ implements short-term (24-48h) classification and time-to-event modeling for solar flare prediction. the system ingests real-time data from noaa goes satellites and solar region observations to predict flare probability and timing.
 
+final project write-up (architecture, performance snapshot, and known validation limitations): `docs/PROJECT_SUMMARY.md`
+
 ## features
 
 - **data ingestion**: automated fetching from noaa/swpc endpoints
@@ -164,6 +166,49 @@ The command:
 - enforces uniqueness on `(external_id, source)` so re-runs are safe
 
 All rows land in the new `solar_flare_events` table, which you can join against existing region/flux data for labeling experiments.
+
+### realtime noaa vs flare+ operations
+
+the realtime benchmark stack logs daily flare+ predictions, noaa probabilities, and resolved actuals into `flare_noaa_realtime_log` with utc timestamps.
+
+start the daily monitor daemon:
+
+```bash
+./flare monitor-noaa-bg --model-tag realtime-30d-live --target-class M --horizon-days 1 --no-backfill --run-time-utc 00:10
+```
+
+check current state and metrics:
+
+```bash
+./flare monitor-noaa-status --model-tag realtime-30d-live
+./flare monitor-noaa-report --model-tag realtime-30d-live --realtime-only
+```
+
+keep the daemon self-healing:
+
+```bash
+./flare monitor-noaa-watchdog-bg --model-tag realtime-30d-live --watchdog-poll-seconds 300
+```
+
+alert if rows go stale (non-zero exit, suitable for cron/ci):
+
+```bash
+./flare monitor-noaa-staleness --model-tag realtime-30d-live --stale-after-hours 26 --require-monitor-process
+```
+
+runtime artifact maintenance (no daemon restart required):
+
+```bash
+./flare monitor-noaa-maintain --retention-days 45 --max-file-mb 20 --keep-tail-mb 5
+```
+
+runtime artifacts are written under `scripts/runtime/`:
+- `noaa_realtime_daemon.log`
+- `noaa_realtime_watchdog.log`
+- `noaa_realtime_monitor.csv`
+- `noaa_realtime_status.json`
+- `noaa_realtime_report.json`
+- `noaa_realtime_staleness.json`
 
 ### model serving (api)
 

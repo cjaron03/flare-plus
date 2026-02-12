@@ -19,6 +19,7 @@ x-app-env: &app-env
 
 x-app-volumes: &app-volumes
   - ./src:/app/src
+  - ./flare_plus:/app/flare_plus
   - ./tests:/app/tests
   - ./config.yaml:/app/config.yaml
   - ./.flake8:/app/.flake8
@@ -102,6 +103,7 @@ services:
       - "${UI_HOST_PORT:-7860}:${UI_PORT:-7860}"
     volumes:
       - ./src:/app/src
+      - ./flare_plus:/app/flare_plus
       - ./tests:/app/tests
       - ./config.yaml:/app/config.yaml
       - ./scripts:/app/scripts

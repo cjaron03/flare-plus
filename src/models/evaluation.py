@@ -6,10 +6,14 @@ from typing import Dict, Any, Optional, List, Tuple
 import numpy as np
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from sklearn.metrics import (
+    accuracy_score,
     brier_score_loss,
-    roc_auc_score,
     classification_report,
     confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
 from sklearn.preprocessing import label_binarize
 
@@ -63,9 +67,12 @@ class ModelEvaluator:
         returns:
             tuple of (calibrated model, calibration info)
         """
-        # CalibratedClassifierCV uses internal CV, so using training data is correct
-        # it splits the data internally for calibration, preventing leakage
-        calibrated_model = CalibratedClassifierCV(model, method=method, cv=cv)
+        resolved_cv = self._resolve_calibration_cv(y, requested_cv=cv)
+        if resolved_cv is None:
+            raise ValueError("insufficient class support for calibration cv")
+
+        # CalibratedClassifierCV uses internal CV, so using training data is correct.
+        calibrated_model = CalibratedClassifierCV(model, method=method, cv=resolved_cv)
         calibrated_model.fit(X, y)
 
         # evaluate on same training data for info (calibration already used internal CV)
@@ -74,12 +81,91 @@ class ModelEvaluator:
 
         calibration_info = {
             "method": method,
-            "cv_folds": cv,
+            "cv_folds": resolved_cv,
             "uncalibrated_probs_mean": uncalibrated_probs.mean(axis=0).tolist(),
             "calibrated_probs_mean": calibrated_probs.mean(axis=0).tolist(),
         }
 
         return calibrated_model, calibration_info
+
+    @staticmethod
+    def _resolve_calibration_cv(
+        y: np.ndarray,
+        requested_cv: int,
+    ) -> Optional[int]:
+        """Resolve a safe CV fold count for calibration or return None if impossible."""
+        if requested_cv < 2:
+            return None
+
+        unique_classes, class_counts = np.unique(y, return_counts=True)
+        if len(unique_classes) < 2:
+            return None
+
+        min_class_count = int(class_counts.min())
+        resolved_cv = min(requested_cv, min_class_count)
+        if resolved_cv < 2:
+            return None
+        return resolved_cv
+
+    def select_best_calibration(
+        self,
+        model: Any,
+        X: np.ndarray,
+        y: np.ndarray,
+        methods: Optional[List[str]] = None,
+        cv: int = 3,
+    ) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+        """
+        Try multiple calibration methods and select the one with lowest macro brier score.
+
+        Returns:
+            tuple of (best calibrated model, calibration metadata)
+        """
+        if methods is None:
+            methods = ["sigmoid", "isotonic"]
+
+        if len(y) == 0:
+            return None, None
+
+        base_probs = model.predict_proba(X)
+        baseline_brier = float(self.compute_brier_score(y, base_probs)["macro_avg"])
+
+        best_model = None
+        best_info = None
+        best_brier = np.inf
+
+        for method in methods:
+            try:
+                calibrated_model, info = self.calibrate_probabilities(
+                    model=model,
+                    X=X,
+                    y=y,
+                    method=method,
+                    cv=cv,
+                )
+                calibrated_probs = calibrated_model.predict_proba(X)
+                calibrated_brier = float(self.compute_brier_score(y, calibrated_probs)["macro_avg"])
+                info["calibration_brier_macro"] = calibrated_brier
+                info["uncalibrated_brier_macro"] = baseline_brier
+
+                if calibrated_brier < best_brier - 1e-9:
+                    best_brier = calibrated_brier
+                    best_model = calibrated_model
+                    best_info = info
+            except Exception as exc:
+                logger.warning("calibration method %s failed: %s", method, exc)
+                continue
+
+        if best_model is None or best_info is None:
+            return None, None
+
+        best_info = dict(best_info)
+        best_info["selected"] = True
+        best_info["improved_brier"] = bool(
+            best_info.get("calibration_brier_macro", np.inf)
+            <= best_info.get("uncalibrated_brier_macro", np.inf) + 1e-9
+        )
+        return best_model, best_info
 
     def compute_brier_score(
         self,
@@ -246,6 +332,7 @@ class ModelEvaluator:
         y_calibration: Optional[np.ndarray] = None,
         plot_reliability: bool = False,
         reliability_filepath: Optional[str] = None,
+        return_calibrated_model: bool = False,
     ) -> Dict[str, Any]:
         """
         comprehensive model evaluation.
@@ -294,14 +381,23 @@ class ModelEvaluator:
             "classes": classes,
         }
 
-        # classification report
+        all_label_ids = list(range(len(classes)))
+
+        # classification report (keep a stable class set even if some classes are absent in y_true)
         evaluation_results["classification_report"] = classification_report(
-            y_true, y_pred, target_names=classes, output_dict=True
+            y_true,
+            y_pred,
+            labels=all_label_ids,
+            target_names=classes,
+            output_dict=True,
+            zero_division=0,
         )
 
-        # confusion matrix
+        # confusion matrix with stable class ordering
         evaluation_results["confusion_matrix"] = confusion_matrix(
-            y_true, y_pred
+            y_true,
+            y_pred,
+            labels=all_label_ids,
         ).tolist()
 
         # brier score
@@ -312,28 +408,31 @@ class ModelEvaluator:
         roc_auc_scores = self.compute_roc_auc_per_class(y_true, y_prob, classes)
         evaluation_results["roc_auc"] = roc_auc_scores
 
+        # event/no-event binary metrics (event := any class other than "None")
+        evaluation_results["event_metrics"] = self.compute_event_metrics(y_true, y_pred, classes)
+
         # calibrate if requested
-        # fix: use separate calibration set (training data) to avoid data leakage
+        # use separate calibration set (training data) to avoid data leakage
         if calibrate:
+            calibrated_model = None
             if X_calibration is not None and y_calibration is not None:
-                # use provided calibration data (should be training data)
-                calibrated_model, calibration_info = self.calibrate_probabilities(
+                calibrated_model, calibration_info = self.select_best_calibration(
                     model, X_calibration, y_calibration
                 )
             else:
-                # fallback: log warning and skip calibration
                 logger.warning(
                     "calibration requested but no calibration data provided. "
                     "skipping calibration to avoid data leakage."
                 )
-                calibrated_model = None
                 calibration_info = None
 
             if calibrated_model is not None:
                 evaluation_results["calibration"] = calibration_info
+                evaluation_results["selected_calibration_method"] = calibration_info.get("method")
 
                 # recompute metrics with calibrated probabilities on test data
                 calibrated_probs = calibrated_model.predict_proba(X)
+                calibrated_pred = np.argmax(calibrated_probs, axis=1)
                 calibrated_brier = self.compute_brier_score(
                     y_true, calibrated_probs, classes
                 )
@@ -343,6 +442,14 @@ class ModelEvaluator:
 
                 evaluation_results["calibrated_brier_score"] = calibrated_brier
                 evaluation_results["calibrated_roc_auc"] = calibrated_roc_auc
+                evaluation_results["calibrated_event_metrics"] = self.compute_event_metrics(
+                    y_true,
+                    calibrated_pred,
+                    classes,
+                )
+
+                if return_calibrated_model:
+                    evaluation_results["calibrated_model"] = calibrated_model
 
                 # plot reliability diagram with calibrated probabilities
                 if plot_reliability:
@@ -358,6 +465,42 @@ class ModelEvaluator:
                 )
 
         return evaluation_results
+
+    @staticmethod
+    def compute_event_metrics(
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        classes: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compute binary event/no-event metrics.
+
+        Event is defined as any class except "None".
+        """
+        if classes is None:
+            return {"available": False, "reason": "classes_not_provided"}
+
+        none_idx = next((idx for idx, cls in enumerate(classes) if str(cls).lower() == "none"), None)
+        if none_idx is None:
+            return {"available": False, "reason": "none_class_not_found"}
+
+        y_true_event = (y_true != none_idx).astype(int)
+        y_pred_event = (y_pred != none_idx).astype(int)
+
+        positives = int(y_true_event.sum())
+        n_samples = int(len(y_true_event))
+        positive_rate = float(positives / n_samples) if n_samples else 0.0
+
+        return {
+            "available": True,
+            "n_samples": n_samples,
+            "positives": positives,
+            "positive_rate": positive_rate,
+            "accuracy": float(accuracy_score(y_true_event, y_pred_event)),
+            "precision": float(precision_score(y_true_event, y_pred_event, zero_division=0)),
+            "recall": float(recall_score(y_true_event, y_pred_event, zero_division=0)),
+            "f1": float(f1_score(y_true_event, y_pred_event, zero_division=0)),
+        }
 
 
 def evaluate_model(
