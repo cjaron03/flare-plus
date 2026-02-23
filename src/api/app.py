@@ -210,8 +210,15 @@ def create_app(
             model_type = data.get("model_type", "best")
             region_number = data.get("region_number")
 
+            # input type validation
+            if not isinstance(window, int):
+                return jsonify({"error": "window must be an integer"}), 400
             if window not in [24, 48]:
                 return jsonify({"error": "window must be 24 or 48"}), 400
+            if not isinstance(model_type, str):
+                return jsonify({"error": "model_type must be a string"}), 400
+            if region_number is not None and not isinstance(region_number, int):
+                return jsonify({"error": "region_number must be an integer"}), 400
 
             include_explanation = data.get("include_explanation", False)
 
@@ -260,8 +267,15 @@ def create_app(
             region_number = data.get("region_number")
             time_buckets = data.get("time_buckets")
 
+            # input type validation
+            if not isinstance(model_type, str):
+                return jsonify({"error": "model_type must be a string"}), 400
             if model_type not in ["cox", "gb"]:
                 return jsonify({"error": "model_type must be 'cox' or 'gb'"}), 400
+            if region_number is not None and not isinstance(region_number, int):
+                return jsonify({"error": "region_number must be an integer"}), 400
+            if time_buckets is not None and not isinstance(time_buckets, list):
+                return jsonify({"error": "time_buckets must be a list"}), 400
 
             include_explanation = data.get("include_explanation", False)
 
@@ -306,6 +320,16 @@ def create_app(
             region_number = data.get("region_number")
             classification_windows = data.get("classification_windows", [24, 48])
             survival_model_type = data.get("survival_model_type", "cox")
+
+            # input type validation
+            if region_number is not None and not isinstance(region_number, int):
+                return jsonify({"error": "region_number must be an integer"}), 400
+            if not isinstance(classification_windows, list) or not all(
+                isinstance(w, int) for w in classification_windows
+            ):
+                return jsonify({"error": "classification_windows must be a list of integers"}), 400
+            if not isinstance(survival_model_type, str) or survival_model_type not in ["cox", "gb"]:
+                return jsonify({"error": "survival_model_type must be 'cox' or 'gb'"}), 400
 
             result = service.predict_all(
                 timestamp=timestamp,

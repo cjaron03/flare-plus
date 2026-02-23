@@ -603,11 +603,11 @@ class ModelTrainer:
                     best_event_f1_scores = cv_event_f1
                     best_event_recall_scores = cv_event_recall
 
-                if best_cv_accuracy >= 0.999:
-                    logger.info("early-stopping logistic search after reaching near-perfect cv accuracy")
+                if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
+                    logger.info("early-stopping logistic search after reaching near-perfect cv accuracy + event f1")
                     break
 
-            if best_cv_accuracy >= 0.999:
+            if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
                 break
 
         model = self._build_logistic_pipeline(c=best_c, class_weight=selected_class_weight)
@@ -720,11 +720,11 @@ class ModelTrainer:
                     best_event_f1_scores = cv_event_f1
                     best_event_recall_scores = cv_event_recall
 
-                if best_cv_accuracy >= 0.999:
-                    logger.info("early-stopping gradient boosting search after reaching near-perfect cv accuracy")
+                if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
+                    logger.info("early-stopping gradient boosting search after near-perfect cv accuracy + event f1")
                     break
 
-            if best_cv_accuracy >= 0.999:
+            if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
                 break
 
         if best_params is None:
@@ -835,11 +835,11 @@ class ModelTrainer:
                     best_event_f1_scores = cv_event_f1
                     best_event_recall_scores = cv_event_recall
 
-                if best_cv_accuracy >= 0.999:
-                    logger.info("early-stopping lightgbm search after reaching near-perfect cv accuracy")
+                if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
+                    logger.info("early-stopping lightgbm search after near-perfect cv accuracy + event f1")
                     break
 
-            if best_cv_accuracy >= 0.999:
+            if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
                 break
 
         if best_params is None:
@@ -947,11 +947,11 @@ class ModelTrainer:
                     best_event_f1_scores = cv_event_f1
                     best_event_recall_scores = cv_event_recall
 
-                if best_cv_accuracy >= 0.999:
-                    logger.info("early-stopping random forest search after reaching near-perfect cv accuracy")
+                if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
+                    logger.info("early-stopping random forest search after near-perfect cv accuracy + event f1")
                     break
 
-            if best_cv_accuracy >= 0.999:
+            if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
                 break
 
         if best_params is None:
@@ -1118,8 +1118,8 @@ class ModelTrainer:
                 best_f1_scores = cv_f1
                 best_event_f1_scores = cv_event_f1
                 best_event_recall_scores = cv_event_recall
-            if best_cv_accuracy >= 0.999:
-                logger.info(f"early-stopping {model_type} + smote search after near-perfect cv accuracy")
+            if best_cv_accuracy >= 0.999 and best_cv_event_f1 >= 0.95:
+                logger.info(f"early-stopping {model_type} + smote search after near-perfect cv accuracy + event f1")
                 break
 
         if best_pipeline is None:

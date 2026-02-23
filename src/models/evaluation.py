@@ -114,9 +114,15 @@ class ModelEvaluator:
         y: np.ndarray,
         methods: Optional[List[str]] = None,
         cv: int = 3,
+        X_eval: Optional[np.ndarray] = None,
+        y_eval: Optional[np.ndarray] = None,
     ) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
         """
         Try multiple calibration methods and select the one with lowest macro brier score.
+
+        Calibration is fitted on (X, y). If X_eval/y_eval are provided, Brier score
+        comparison uses held-out data to avoid in-sample bias. Otherwise falls back
+        to evaluating on the calibration data (less reliable).
 
         Returns:
             tuple of (best calibrated model, calibration metadata)
@@ -127,8 +133,12 @@ class ModelEvaluator:
         if len(y) == 0:
             return None, None
 
-        base_probs = model.predict_proba(X)
-        baseline_brier = float(self.compute_brier_score(y, base_probs)["macro_avg"])
+        # use held-out data for evaluation if available, otherwise fall back to training data
+        X_score = X_eval if X_eval is not None else X
+        y_score = y_eval if y_eval is not None else y
+
+        base_probs = model.predict_proba(X_score)
+        baseline_brier = float(self.compute_brier_score(y_score, base_probs)["macro_avg"])
 
         best_model = None
         best_info = None
@@ -143,8 +153,8 @@ class ModelEvaluator:
                     method=method,
                     cv=cv,
                 )
-                calibrated_probs = calibrated_model.predict_proba(X)
-                calibrated_brier = float(self.compute_brier_score(y, calibrated_probs)["macro_avg"])
+                calibrated_probs = calibrated_model.predict_proba(X_score)
+                calibrated_brier = float(self.compute_brier_score(y_score, calibrated_probs)["macro_avg"])
                 info["calibration_brier_macro"] = calibrated_brier
                 info["uncalibrated_brier_macro"] = baseline_brier
 
@@ -417,7 +427,8 @@ class ModelEvaluator:
             calibrated_model = None
             if X_calibration is not None and y_calibration is not None:
                 calibrated_model, calibration_info = self.select_best_calibration(
-                    model, X_calibration, y_calibration
+                    model, X_calibration, y_calibration,
+                    X_eval=X, y_eval=y_true,  # evaluate on held-out test data
                 )
             else:
                 logger.warning(
