@@ -446,9 +446,11 @@ def test_feature_selection(sample_features):
     assert X_sel.shape[1] == len(sel_names)
     assert X_sel.shape[0] == X.shape[0]
 
-    # integration: verify train_baseline_models uses feature selection
+    # integration: verify train_baseline_models trains on pre-selected features
+    # (feature selection is now called by the pipeline, not by train_baseline_models)
+    selected_df = sample_features[sel_names + ["label_24h"]].copy()
     trained_models = trainer.train_baseline_models(
-        sample_features,
+        selected_df,
         "label_24h",
         models=["logistic"],
     )
@@ -456,6 +458,7 @@ def test_feature_selection(sample_features):
     assert "logistic" in trained_models
     _, info = trained_models["logistic"]
     assert "feature_names" in info
+    assert len(info["feature_names"]) == len(sel_names)
 
 
 def test_classification_pipeline_initialization():

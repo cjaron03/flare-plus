@@ -55,15 +55,25 @@ def create_app(
         configured flask app
     """
     app = Flask(__name__)
-    CORS(app)  # enable cross-origin requests
+
+    # restrict CORS to configured origins (defaults to localhost for development)
+    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:7860,http://127.0.0.1:7860").split(",")
+    CORS(app, origins=[o.strip() for o in allowed_origins if o.strip()])
 
     # initialize rate limiter
-    # uses in-memory storage by default (upgrade to Redis for production scaling)
+    # configure via RATE_LIMIT_STORAGE_URI env var (e.g. "redis://localhost:6379")
+    # defaults to memory:// for development; use Redis/memcached in production
+    rate_limit_storage = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+    if rate_limit_storage == "memory://" and os.getenv("ENVIRONMENT") == "production":
+        logger.warning(
+            "rate limiter using in-memory storage in production — "
+            "set RATE_LIMIT_STORAGE_URI to a Redis URL for persistence across workers/restarts"
+        )
     limiter = Limiter(
         key_func=get_remote_address,
         app=app,
         default_limits=["100 per hour"],
-        storage_uri="memory://",
+        storage_uri=rate_limit_storage,
     )
 
     # initialize prediction service

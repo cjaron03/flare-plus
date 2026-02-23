@@ -1170,10 +1170,10 @@ class ModelTrainer:
         # prepare data
         X, y, feature_names = self.prepare_features_and_labels(features_df, label_column)
 
-        # optional feature selection
-        if self.use_feature_selection:
-            X, feature_names = self.select_features(X, y, feature_names)
-            self.feature_names = feature_names  # type: ignore[assignment]
+        # NOTE: feature selection is intentionally NOT done here.
+        # It must be called from the pipeline AFTER the chronological
+        # train/test split to prevent data leakage into the test set.
+        # See ClassificationPipeline.train_and_evaluate() for the correct call site.
 
         logger.info(
             f"training models on {len(X)} samples with {len(feature_names)} features"

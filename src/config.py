@@ -138,8 +138,8 @@ class AdminConfig:
     ACCESS_TOKEN = os.getenv("ADMIN_ACCESS_TOKEN")
     RUNTIME_TOKEN = os.getenv("ADMIN_RUNTIME_TOKEN")
     STATUS_MESSAGE = os.getenv("ADMIN_STATUS_MESSAGE", "Admin access enabled.")
-    DEV_USERNAME = os.getenv("ADMIN_UI_USERNAME", "plncake")
-    DEV_PASSWORD = os.getenv("ADMIN_UI_PASSWORD", "12345")
+    DEV_USERNAME = os.getenv("ADMIN_UI_USERNAME", "")
+    DEV_PASSWORD = os.getenv("ADMIN_UI_PASSWORD", "")
     LOGIN_ENABLED = os.getenv("ADMIN_UI_LOGIN_ENABLED", "true").lower() not in {"0", "false", "no"}
     MAX_LOGIN_ATTEMPTS = int(os.getenv("ADMIN_UI_MAX_ATTEMPTS", "5"))
     LOGIN_WINDOW_SECONDS = int(os.getenv("ADMIN_UI_ATTEMPT_WINDOW", "60"))
@@ -188,6 +188,12 @@ class AdminConfig:
     @classmethod
     def validate_credentials(cls, username: str, password: str) -> Tuple[bool, str]:
         """validate UI login credentials and grant session access on success."""
+        if not cls.DEV_USERNAME or not cls.DEV_PASSWORD:
+            return False, (
+                "Admin credentials not configured. "
+                "Set ADMIN_UI_USERNAME and ADMIN_UI_PASSWORD environment variables."
+            )
+
         allowed, message = cls._login_allowed()
         if not allowed:
             return False, message

@@ -466,6 +466,18 @@ class ClassificationPipeline:
             )
 
             logger.info(f"train size: {len(X_train)}, test size: {len(X_test)}")
+
+            # feature selection on training data ONLY (after chronological split)
+            # to prevent information from the test set leaking into feature selection
+            if self.trainer.use_feature_selection:
+                X_train, selected_names = self.trainer.select_features(
+                    X_train, y_train, feature_cols
+                )
+                # apply same selection to test set
+                selected_indices = [feature_cols.index(n) for n in selected_names]
+                X_test = X_test[:, selected_indices]
+                feature_cols = selected_names
+
             # fix: correctly map classes to counts
             unique_labels, counts = np.unique(y_train, return_counts=True)
             class_dist = dict(zip([classes[i] for i in unique_labels], counts))
