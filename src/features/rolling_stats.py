@@ -39,17 +39,22 @@ def compute_rolling_statistics(
     if aggregation_functions is None:
         aggregation_functions = ["mean", "std", "min", "max"]
 
+    features: Dict[str, Any] = {}
     if data is None or len(data) == 0 or value_column not in data.columns:
-        return {}
+        for window_hours in windows_hours:
+            for func in aggregation_functions:
+                features[f"{value_column}_{window_hours}h_{func}"] = None
+        return features
 
     # filter data up to current timestamp
     valid_data = data[data["timestamp"] <= timestamp].copy()
     if len(valid_data) == 0:
-        return {}
+        for window_hours in windows_hours:
+            for func in aggregation_functions:
+                features[f"{value_column}_{window_hours}h_{func}"] = None
+        return features
 
     valid_data = valid_data.sort_values("timestamp")
-
-    features: Dict[str, Any] = {}
 
     timestamp = _normalize_timestamp(timestamp)
 
@@ -114,11 +119,16 @@ def compute_recency_weighted_flare_counts(
     returns:
         dict with recency-weighted flare counts for each class and window
     """
-    if flare_data is None or len(flare_data) == 0:
-        return {}
-
     timestamp = _normalize_timestamp(timestamp)
     features = {}
+
+    if flare_data is None or len(flare_data) == 0:
+        for window_hours in windows_hours:
+            for flare_class in flare_classes:
+                features[f"flare_{flare_class}_{window_hours}h_count"] = 0
+                features[f"flare_{flare_class}_{window_hours}h_weighted_count"] = 0.0
+            features[f"flare_total_{window_hours}h_weighted_count"] = 0.0
+        return features
 
     for window_hours in windows_hours:
         # filter flares within window

@@ -74,6 +74,39 @@ this starts the gradio ui dashboard in the background.
 the dashboard is available at:
 - `http://127.0.0.1:7860`
 
+## realtime noaa monitoring operations
+
+run the realtime noaa-vs-flare+ benchmark daemon (daily prediction logging):
+
+```bash
+./flare monitor-noaa-bg --model-tag realtime-30d-live --target-class M --horizon-days 1 --no-backfill --run-time-utc 00:10
+```
+
+view status and metrics:
+
+```bash
+./flare monitor-noaa-status --model-tag realtime-30d-live
+./flare monitor-noaa-report --model-tag realtime-30d-live --realtime-only
+```
+
+run watchdog for auto-restart:
+
+```bash
+./flare monitor-noaa-watchdog-bg --model-tag realtime-30d-live --watchdog-poll-seconds 300
+```
+
+check staleness for alerting (returns non-zero if stale):
+
+```bash
+./flare monitor-noaa-staleness --model-tag realtime-30d-live --stale-after-hours 26 --require-monitor-process
+```
+
+maintain runtime artifacts without stopping daemons:
+
+```bash
+./flare monitor-noaa-maintain --retention-days 45 --max-file-mb 20 --keep-tail-mb 5
+```
+
 ## using the ui dashboard
 
 ### predictions tab
@@ -338,4 +371,3 @@ use the plain language summary for quick interpretation, and the detailed distri
 - feature computation requires sufficient historical data (at least 24-48 hours of flux data)
 - region-specific predictions require that the specified region exists in the database
 - model performance depends on data quality and completeness from noaa sources
-
