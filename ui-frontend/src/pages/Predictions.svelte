@@ -350,7 +350,8 @@
         over time. Compare Cox and Gradient Boosting survival models.
       </p>
       <div class="info-box" style="margin: 1rem 0; padding: 0.75rem; background: rgba(96, 165, 250, 0.1); border-left: 3px solid #60a5fa; border-radius: 0.25rem;">
-        <strong>Model Performance:</strong> F1: 0.867, Precision: 93%, Recall: 81%
+        <strong>Model Performance:</strong> not yet validated. Earlier figures
+        were withdrawn because the backtest did not read the model's output.
       </div>
 
       <form on:submit|preventDefault={() => runSurvival(false)}>

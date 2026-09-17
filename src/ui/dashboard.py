@@ -102,8 +102,8 @@ def create_dashboard(
                             else:
                                 lines.append("**Models**: None loaded")
 
-                            lines.append("**Model Performance**: F1: 0.867, Precision: 93%, Recall: 81%")
-                            lines.append("*(M-class survival model metrics)*")
+                            lines.append("**Model Performance**: not yet validated")
+                            lines.append("*(earlier figures withdrawn, see DEPLOYMENT.md)*")
 
                             confidence = model_status.get("confidence_level")
                             if confidence:
@@ -289,8 +289,8 @@ def create_dashboard(
                             else:
                                 lines.append("**Models**: None loaded")
 
-                            lines.append("**Model Performance**: F1: 0.867, Precision: 93%, Recall: 81%")
-                            lines.append("*(M-class survival model metrics)*")
+                            lines.append("**Model Performance**: not yet validated")
+                            lines.append("*(earlier figures withdrawn, see DEPLOYMENT.md)*")
 
                             confidence = model_status.get("confidence_level")
                             if confidence:

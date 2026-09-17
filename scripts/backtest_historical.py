@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import logging  # noqa: E402
 from datetime import datetime, timedelta  # noqa: E402
 from typing import Dict, List, Tuple  # noqa: E402
-import numpy as np  # noqa: E402
 import joblib  # noqa: E402
 
 from src.config import PROJECT_ROOT  # noqa: E402
@@ -18,6 +17,7 @@ from src.data.database import get_database  # noqa: E402
 from src.data.schema import FlareEvent  # noqa: E402
 from src.features.pipeline import FeatureEngineer  # noqa: E402
 from src.models.survival_pipeline import SurvivalAnalysisPipeline  # noqa: E402
+from src.models.backtest_scoring import compute_backtest_metrics  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,155 +25,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-def reconstruct_survival_pipeline(pipeline_data: Dict) -> SurvivalAnalysisPipeline:
-    """reconstruct survival pipeline from saved dict."""
-    pipeline = SurvivalAnalysisPipeline(
-        target_flare_class=pipeline_data.get("target_flare_class", "X"),
-        max_time_hours=pipeline_data.get("max_time_hours", 168),
-    )
-    pipeline.is_fitted = pipeline_data.get("is_fitted", False)
-
-    # restore model state
-    if pipeline_data.get("cox_model"):
-        pipeline.cox_model = pipeline_data["cox_model"]
-    if pipeline_data.get("gb_model"):
-        pipeline.gb_model = pipeline_data["gb_model"]
-
-    return pipeline
-
-
-def load_survival_model(model_path: Path) -> SurvivalAnalysisPipeline:
-    """load survival model from joblib file."""
-    logger.info(f"loading model from {model_path}")
-
-    model_data = joblib.load(model_path)
-
-    # reconstruct pipeline if saved as dict
-    if isinstance(model_data, dict):
-        return reconstruct_survival_pipeline(model_data)
-
-    return model_data
-
-
-def get_historical_flares(
-    db,
-    start_date: datetime,
-    end_date: datetime,
-    min_class: str = "C",
-) -> List[Dict]:
-    """retrieve historical flare events from database."""
-    with db.get_session() as session:
-        flares = (
-            session.query(FlareEvent)
-            .filter(
-                FlareEvent.peak_time >= start_date,
-                FlareEvent.peak_time <= end_date,
-                FlareEvent.flare_class.isnot(None),
-            )
-            .order_by(FlareEvent.peak_time)
-            .all()
-        )
-
-        # filter by minimum class and convert to dicts while in session
-        class_order = {"B": 0, "C": 1, "M": 2, "X": 3}
-        min_class_value = class_order.get(min_class, 0)
-
-        filtered = []
-        for flare in flares:
-            flare_class = flare.flare_class[0] if flare.flare_class else "B"
-            if class_order.get(flare_class, 0) >= min_class_value:
-                filtered.append(
-                    {
-                        "peak_time": flare.peak_time,
-                        "flare_class": flare.flare_class,
-                        "class_magnitude": flare.class_magnitude,
-                    }
-                )
-
-    return filtered
-
-
-def compute_backtest_metrics(predictions: List[Dict], actuals: List[Dict]) -> Dict[str, float]:
-    """compute performance metrics for backtesting."""
-    if not predictions or not actuals:
-        return {
-            "error": "insufficient data",
-            "n_predictions": len(predictions),
-            "n_actuals": len(actuals),
-        }
-
-    # match predictions to actuals
-    matches = []
-    for pred in predictions:
-        pred_time = pred["timestamp"]
-        pred_window_end = pred_time + timedelta(hours=pred.get("window_hours", 48))
-
-        # find actuals in prediction window
-        window_actuals = [a for a in actuals if pred_time <= a["peak_time"] <= pred_window_end]
-
-        matches.append(
-            {
-                "prediction": pred,
-                "actuals": window_actuals,
-                "hit": len(window_actuals) > 0,
-            }
-        )
-
-    # calculate metrics
-    n_predictions = len(matches)
-    n_hits = sum(1 for m in matches if m["hit"])
-    n_misses = n_predictions - n_hits
-
-    # false negatives: actuals not predicted
-    predicted_times = {m["actuals"][0]["peak_time"] for m in matches if m["actuals"]}
-    false_negatives = len([a for a in actuals if a["peak_time"] not in predicted_times])
-
-    # precision and recall
-    precision = n_hits / n_predictions if n_predictions > 0 else 0
-    recall = n_hits / (n_hits + false_negatives) if (n_hits + false_negatives) > 0 else 0
-    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-    # calculate brier score if probabilities available
-    brier_scores = []
-    for match in matches:
-        pred = match["prediction"]
-        if "probability_distribution" in pred:
-            probs = pred["probability_distribution"]
-            # true outcome: 1 if flare occurred, 0 otherwise
-            true_outcome = 1 if match["hit"] else 0
-            # predicted probability (sum of probabilities in window)
-            predicted_prob = sum(probs.values())
-            brier = (predicted_prob - true_outcome) ** 2
-            brier_scores.append(brier)
-
-    avg_brier = np.mean(brier_scores) if brier_scores else None
-
-    return {
-        "n_predictions": n_predictions,
-        "n_actuals": len(actuals),
-        "n_hits": n_hits,
-        "n_misses": n_misses,
-        "false_negatives": false_negatives,
-        "precision": precision,
-        "recall": recall,
-        "f1_score": f1_score,
-        "brier_score": avg_brier,
-    }
-
-
 def run_backtest(
     model_path: Path,
     start_date: datetime,
     end_date: datetime,
     target_class: str = "C",
     sample_interval_hours: int = 24,
+    horizon_hours: int = 24,
+    threshold: float = 0.5,
 ) -> Tuple[List[Dict], Dict[str, float]]:
     """run backtest on historical data."""
     logger.info(f"backtesting from {start_date} to {end_date}")
 
     # load model
     model = load_survival_model(model_path)
+
+    # the model has no opinion past the last bucket it was fitted over, so a
+    # horizon beyond that would be scored against extrapolation.
+    if horizon_hours > model.max_time_hours:
+        logger.warning(
+            f"horizon {horizon_hours}h exceeds the model's {model.max_time_hours}h "
+            f"range, clamping to {model.max_time_hours}h"
+        )
+        horizon_hours = model.max_time_hours
+    logger.info(f"horizon {horizon_hours}h, decision threshold {threshold}")
     feature_engineer = FeatureEngineer()
     db = get_database()
 
@@ -218,7 +93,9 @@ def run_backtest(
     logger.info(f"generated {len(predictions)} predictions")
 
     # compute metrics
-    metrics = compute_backtest_metrics(predictions, actuals)
+    metrics = compute_backtest_metrics(
+        predictions, actuals, horizon_hours=horizon_hours, threshold=threshold
+    )
 
     return predictions, metrics
 
@@ -229,8 +106,15 @@ def generate_backtest_report(
     start_date: datetime,
     end_date: datetime,
     output_path: Path = None,
+    train_window: Tuple[datetime, datetime] = None,
 ) -> str:
-    """generate human-readable backtest report."""
+    """generate human readable backtest report."""
+    if "error" in metrics:
+        return f"backtest produced no usable result: {metrics['error']}"
+
+    base = metrics["base_rate"]
+    bss = metrics["brier_skill_score"]
+
     report_lines = [
         "=" * 70,
         "FLARE+ BACKTEST REPORT",
@@ -239,59 +123,100 @@ def generate_backtest_report(
         f"Model: {model_path.name}",
         f"Period: {start_date.date()} to {end_date.date()}",
         f"Duration: {(end_date - start_date).days} days",
+        f"Forecast horizon: {metrics['horizon_hours']}h",
+        f"Decision threshold: {metrics['threshold']:.2f}",
         "",
         "=" * 70,
-        "PERFORMANCE METRICS",
+        "WHAT HAPPENED",
         "=" * 70,
         "",
-        f"Total predictions:        {metrics.get('n_predictions', 0)}",
-        f"Actual flares:            {metrics.get('n_actuals', 0)}",
-        f"Correct predictions:      {metrics.get('n_hits', 0)}",
-        f"Missed predictions:       {metrics.get('n_misses', 0)}",
-        f"False negatives:          {metrics.get('false_negatives', 0)}",
+        f"Forecasts issued:         {metrics['n_predictions']}",
+        f"Flares in period:         {metrics['n_actuals']}",
+        f"Windows containing one:   {metrics['n_windows_with_event']} "
+        f"({base:.1%} of windows)",
         "",
-        f"Precision:                {metrics.get('precision', 0):.3f}",
-        f"Recall:                   {metrics.get('recall', 0):.3f}",
-        f"F1 Score:                 {metrics.get('f1_score', 0):.3f}",
+        f"True positives:           {metrics['true_positives']}",
+        f"False positives:          {metrics['false_positives']}",
+        f"False negatives:          {metrics['false_negatives']}",
+        f"True negatives:           {metrics['true_negatives']}",
+        "",
+        "=" * 70,
+        "THE MODEL AGAINST THE FREE ANSWERS",
+        "=" * 70,
+        "",
+        "                          model      always yes    always no",
+        f"Precision                 {metrics['precision']:.3f}      "
+        f"{metrics['always_yes_precision']:.3f}         n/a",
+        f"Recall                    {metrics['recall']:.3f}      "
+        f"{metrics['always_yes_recall']:.3f}         0.000",
+        f"F1                        {metrics['f1_score']:.3f}      "
+        f"{metrics['always_yes_f1']:.3f}         0.000",
+        "",
+        f"Brier score               {metrics['brier_score']:.4f}",
+        f"Brier, climatology        {metrics['brier_climatology']:.4f}",
+        f"Brier skill score         {bss:+.4f}",
+        "",
+        f"Accuracy of always no     {metrics['always_no_accuracy']:.1%}",
+        "",
+        "=" * 70,
+        "INTERPRETATION",
+        "=" * 70,
+        "",
     ]
 
-    if metrics.get("brier_score") is not None:
-        report_lines.append(f"Brier Score:              {metrics['brier_score']:.3f}")
+    # the only interpretation that means anything is the one relative to
+    # climatology. an absolute cutoff on precision would call a model good
+    # for having noticed that the sun was active.
+    if bss > 0.15:
+        report_lines.append(
+            f"MODEL BEATS CLIMATOLOGY: it removed {bss:.1%} of the error that "
+            "knowing the base rate alone would have left."
+        )
+    elif bss > 0.0:
+        report_lines.append(
+            f"MARGINAL: the model is {bss:.1%} better than repeating the base "
+            "rate. That is not yet a useful forecast."
+        )
+    else:
+        report_lines.append(
+            "NO SKILL: the model scores no better than a forecaster who "
+            "ignores every input and repeats the base rate. Whatever the "
+            "precision figure says, nothing has been demonstrated here."
+        )
 
+    if metrics["f1_score"] <= metrics["always_yes_f1"]:
+        report_lines.append(
+            f"F1 WARNING: saying yes every single time scores "
+            f"{metrics['always_yes_f1']:.3f}, which is at least as good as the "
+            f"model's {metrics['f1_score']:.3f}. F1 is flattering the model "
+            "because events are common in this window."
+        )
+
+    if metrics["true_positives"] + metrics["false_positives"] == 0:
+        report_lines.append(
+            "NOTE: the model never crossed the threshold, so precision is "
+            "undefined rather than zero."
+        )
+
+    # a threshold sweep, because one threshold is one arbitrary choice and a
+    # model that separates the classes does it at more than one of them.
     report_lines.extend(
         [
             "",
             "=" * 70,
-            "INTERPRETATION",
+            "THRESHOLD SWEEP",
             "=" * 70,
             "",
+            "  thresh   issued   precision   recall      f1",
         ]
     )
-
-    # add interpretation
-    precision = metrics.get("precision", 0)
-    recall = metrics.get("recall", 0)
-
-    if precision > 0.7:
-        report_lines.append("✓ HIGH PRECISION: Model rarely issues false alarms")
-    elif precision > 0.5:
-        report_lines.append("~ MODERATE PRECISION: Some false alarms expected")
-    else:
-        report_lines.append("✗ LOW PRECISION: High false alarm rate")
-
-    if recall > 0.7:
-        report_lines.append("✓ HIGH RECALL: Model catches most flares")
-    elif recall > 0.5:
-        report_lines.append("~ MODERATE RECALL: Model misses some flares")
-    else:
-        report_lines.append("✗ LOW RECALL: Model misses many flares")
-
-    if metrics.get("brier_score") and metrics["brier_score"] < 0.15:
-        report_lines.append("✓ GOOD CALIBRATION: Probabilities are well-calibrated")
-    elif metrics.get("brier_score") and metrics["brier_score"] < 0.25:
-        report_lines.append("~ FAIR CALIBRATION: Probabilities somewhat calibrated")
-    elif metrics.get("brier_score"):
-        report_lines.append("✗ POOR CALIBRATION: Probabilities need improvement")
+    for row in metrics["threshold_sweep"]:
+        if row["n_positive"] == 0 and row["threshold"] > 0:
+            continue
+        report_lines.append(
+            f"   {row['threshold']:.2f}     {row['n_positive']:4d}      "
+            f"{row['precision']:.3f}     {row['recall']:.3f}   {row['f1']:.3f}"
+        )
 
     report_lines.extend(
         [
@@ -300,13 +225,43 @@ def generate_backtest_report(
             "NOTES",
             "=" * 70,
             "",
-            "- Precision: Fraction of predictions that were correct (1 - false alarm rate)",
-            "- Recall: Fraction of actual flares that were predicted (detection rate)",
-            "- F1 Score: Harmonic mean of precision and recall",
-            "- Brier Score: Lower is better (0 = perfect, 1 = worst)",
+            "- Precision: of the forecasts that said yes, the fraction that",
+            "  were followed by a flare inside the horizon.",
+            "- Recall: of the windows that did contain a flare, the fraction",
+            "  the model called.",
+            "- Brier score: mean squared error of the probability itself.",
+            "  Lower is better, but it is only meaningful next to the",
+            "  climatology row below it.",
+            "- Brier skill score: the fraction of climatology's error the",
+            "  model removed. Zero means the model added nothing over knowing",
+            "  how often flares happen. This is the number that matters.",
             "",
-            "Historical backtesting provides validation on past solar activity but",
-            "does not guarantee future performance. Solar cycles vary significantly.",
+            "Rare events make every absolute score look good. During a quiet",
+            "period a forecaster who always says no is right almost always and",
+            "is worth nothing; during an active one a forecaster who always",
+            "says yes looks precise for the same reason. Only the comparison",
+            "against climatology survives either case.",
+            "",
+        ]
+    )
+
+    if train_window:
+        t0, t1 = train_window
+        if t0 <= end_date and start_date <= t1:
+            report_lines.extend(
+                [
+                    "WARNING: this backtest window overlaps the model's training",
+                    f"window ({t0.date()} to {t1.date()}). The model has already",
+                    "seen some of this data, so these scores are optimistic and",
+                    "are not an estimate of performance on new observations.",
+                    "",
+                ]
+            )
+
+    report_lines.extend(
+        [
+            "Historical backtesting validates against past solar activity and",
+            "does not guarantee future performance. Solar cycles vary.",
             "",
             f"Report generated: {datetime.utcnow().isoformat()}",
             "=" * 70,
@@ -360,6 +315,31 @@ def main():
         help="prediction interval in hours (default: 24)",
     )
     parser.add_argument(
+        "--horizon",
+        type=int,
+        default=24,
+        help="forecast horizon in hours, the 'by when' of the forecast "
+             "(default: 24)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="probability at or above which the forecast counts as a yes "
+             "(default: 0.5)",
+    )
+    parser.add_argument(
+        "--train-start",
+        type=str,
+        help="start of the model's training window (YYYY-MM-DD). given, the "
+             "report warns when the backtest overlaps it",
+    )
+    parser.add_argument(
+        "--train-end",
+        type=str,
+        help="end of the model's training window (YYYY-MM-DD)",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="data/backtest_report.txt",
@@ -393,28 +373,41 @@ def main():
         end_date=end_date,
         target_class=args.target_class,
         sample_interval_hours=args.interval,
+        horizon_hours=args.horizon,
+        threshold=args.threshold,
     )
 
     # generate report
+    train_window = None
+    if args.train_start and args.train_end:
+        train_window = (
+            datetime.strptime(args.train_start, "%Y-%m-%d"),
+            datetime.strptime(args.train_end, "%Y-%m-%d"),
+        )
+
     report = generate_backtest_report(
         metrics=metrics,
         model_path=model_path,
         start_date=start_date,
         end_date=end_date,
         output_path=PROJECT_ROOT / args.output,
+        train_window=train_window,
     )
 
     print("\n" + report)
 
-    # summary
-    if metrics.get("f1_score", 0) > 0.6:
-        logger.info("✓ BACKTEST PASSED - Model shows good performance")
+    # the gate reads skill, not f1. f1 rises on its own when events are
+    # common, so gating on it would pass a model for having been pointed at
+    # an active fortnight.
+    bss = metrics.get("brier_skill_score", 0)
+    if bss > 0.15:
+        logger.info(f"BACKTEST PASSED: brier skill score {bss:+.3f} over climatology")
         sys.exit(0)
-    elif metrics.get("f1_score", 0) > 0.4:
-        logger.warning("~ BACKTEST MARGINAL - Model shows moderate performance")
+    elif bss > 0:
+        logger.warning(f"BACKTEST MARGINAL: brier skill score {bss:+.3f}, barely over climatology")
         sys.exit(0)
     else:
-        logger.error("✗ BACKTEST FAILED - Model shows poor performance")
+        logger.error(f"BACKTEST FAILED: brier skill score {bss:+.3f}, no better than climatology")
         sys.exit(1)
 
 

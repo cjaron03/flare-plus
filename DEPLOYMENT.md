@@ -121,38 +121,84 @@ NASA_API_KEY=your_nasa_api_key_here
 
 ### M-Class Survival Model (Current Production Model)
 
-**Performance Metrics:**
-- **F1 Score:** 0.867
-- **Precision:** 93%
-- **Recall:** 81%
-- **Brier Score:** 0.071 (lower is better)
-- **C-Index:** ~0.75 (survival model concordance)
+**Status: not yet measured.**
 
-**Training Data:**
-- Model trained on M-class flares from October 28 - November 10, 2025
+This section previously reported F1 0.867, precision 93%, recall 81% and a
+Brier score of 0.071. Those figures have been withdrawn. They were produced
+by a scoring function that never read the model's output, so they did not
+measure the model.
+
+What the old backtest actually did:
+
+- It treated every sampled timestamp as a positive forecast, whatever
+  probability the model had emitted. There was no decision threshold
+  anywhere in the loop, so a model returning a constant scored identically
+  to a model that had learned something.
+- It counted a forecast correct if a flare fell anywhere inside the model's
+  full 168h range, rather than inside a stated forecast horizon. Across an
+  active fortnight that is nearly every window.
+- The 93% was therefore the base rate. 13 of 14 seven-day windows in the
+  test period contained an M-class flare, and 13/14 is 0.929.
+- The Brier score summed the probability distribution across all eight
+  buckets, which is close to 1.0 by construction, so it measured that the
+  distribution normalised rather than that it was calibrated.
+- False negatives were counted from the first flare in each window only, so
+  additional flares in the same window were recorded as misses.
+- The test period was the same 13 days the model was trained on.
+
+`src/models/backtest_scoring.py` replaces that scoring. It takes an explicit
+horizon and an explicit decision threshold, builds a real confusion matrix,
+and reports every score beside climatology, which is what a forecaster gets
+for ignoring all inputs and repeating the base rate. The headline number is
+now the Brier skill score: the fraction of climatology's error the model
+removed. Zero means the model added nothing.
+
+Rerunning the backtest against a test period disjoint from training will
+produce figures to put here.
+
+### Training Data
+
+- Trained on M-class flares from October 28 to November 10, 2025
 - Training window: 13 days
-- M-class flares in training set: 8 events
-- Total flares in training window: 125 C-class, 8 M-class, 1 X-class
+- M-class flares in the training set: 8 events
+- Total flares in the window: 125 C-class, 8 M-class, 1 X-class
 
-**Backtesting Results:**
-- Test period: October 28 - November 10, 2025
-- Total predictions: 14
-- Actual flares: 9
-- Correct predictions: 13
-- Missed predictions: 1
-- False negatives: 3
+Eight positive events is not enough to support a performance claim, and the
+training window is a single active period rather than a range of solar
+conditions.
 
-**Model Characteristics:**
+### Model Characteristics
+
 - **Model Type:** Cox Proportional Hazards (survival analysis)
 - **Target Class:** M-class flares only
 - **Time Buckets:** 0-6h, 6-12h, 12-24h, 24-48h, 48-72h, 72-96h, 96-120h, 120-168h
-- **Features:** Flux trends, solar region complexity, magnetic field measurements, recency-weighted flare counts
+- **Features:** Flux trends, solar region complexity, magnetic field
+  measurements, recency-weighted flare counts
+
+### Running a Backtest
+
+```bash
+python scripts/backtest_historical.py \
+    --model models/survival_model_m_class.joblib \
+    --target-class M \
+    --start-date 2025-11-11 \
+    --end-date 2025-12-31 \
+    --horizon 24 \
+    --threshold 0.5 \
+    --train-start 2025-10-28 \
+    --train-end 2025-11-10
+```
+
+Passing the training window makes the report warn if it overlaps the period
+being tested. The command exits non-zero when the Brier skill score is at or
+below zero.
 
 **Limitations:**
 - C-class predictions are currently disabled (model focuses on M/X-class only)
-- Training data is limited to recent window (Oct 28 - Nov 10, 2025)
+- Training data is limited to a recent window (Oct 28 to Nov 10, 2025)
 - Model performance may degrade during different solar cycle phases
 - Predictions are for research/advisory purposes only
+- No validated performance figures exist yet
 
 ### Model File Location
 
