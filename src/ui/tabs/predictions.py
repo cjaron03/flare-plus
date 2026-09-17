@@ -295,7 +295,8 @@ def build_predictions_tab(
             "Two complementary prediction models:\n\n"
             "**Classification**: Predicts the maximum flare class (M/X) expected in 24-48h\n"
             "**Survival Analysis**: Predicts when an M-class flare will occur (timing probabilities)\n\n"
-            "**Model Performance:** F1: 0.867, Precision: 93%, Recall: 81%\n\n"
+            "**Model Performance:** not yet validated. Earlier figures were "
+            "withdrawn, see DEPLOYMENT.md.\n\n"
             "Note: C-class predictions are currently disabled. These models focus on M/X-class flares only."
         )
 
@@ -442,7 +443,8 @@ def build_predictions_tab(
                     "- Probability distribution across time buckets\n"
                     "- Survival curve showing likelihood over time\n"
                     "- Plain-language timing estimates\n\n"
-                    "**Model Performance:** F1: 0.867, Precision: 93%, Recall: 81%\n\n"
+                    "**Model Performance:** not yet validated. Earlier figures were "
+                    "withdrawn, see DEPLOYMENT.md.\n\n"
                     "Note: C-class predictions are currently disabled. This model is trained on M-class flares."
                 )
 

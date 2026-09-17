@@ -225,7 +225,8 @@ def format_survival_plain_language(prediction: Dict[str, Any]) -> str:
         f"There is a {max_prob*100:.1f}% chance of a {target_class}-class flare "
         f"within {bucket_str}.\n\n"
         f"Note: This survival model predicts M-class flare timing. "
-        f"Model performance: F1: 0.867, Precision: 93%, Recall: 81%."
+        f"Model performance is not yet validated: treat this number as "
+        f"indicative only."
     )
 
     # add hazard score interpretation if available

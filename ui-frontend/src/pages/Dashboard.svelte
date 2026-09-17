@@ -1266,12 +1266,12 @@
     <div class="info-box" style="margin: 1rem 0; padding: 1rem; background: rgba(96, 165, 250, 0.1); border-left: 3px solid #60a5fa; border-radius: 0.25rem;">
       <p style="margin: 0; line-height: 1.6;">
         <strong>ALPHA:</strong> Model trained on 13 days of observations (8 M-class events)<br/>
-        <strong>Current performance:</strong> 93% precision, 81% recall, 
+        <strong>Current performance:</strong> 
         <button 
           on:click={() => showBacktestReport = !showBacktestReport}
           style="background: none; border: none; color: #3b82f6; text-decoration: underline; cursor: pointer; padding: 0; font-weight: inherit; font-size: inherit;"
         >
-          F1 score 0.867
+          not yet validated
         </button><br/>
         <strong>Predictions update</strong> every 6 hours as new data is collected<br/>
         <strong>Retraining</strong> weekly to improve accuracy
@@ -1280,24 +1280,21 @@
         <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.1); border-radius: 0.25rem; font-size: 0.9rem;">
           <div style="font-weight: 600; margin-bottom: 0.5rem;">Backtest Report (M-class Survival Model)</div>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
-            <div>
-              <strong>F1 Score:</strong> 0.867
-            </div>
-            <div>
-              <strong>Precision:</strong> 93%
-            </div>
-            <div>
-              <strong>Recall:</strong> 81%
-            </div>
-            <div>
-              <strong>Brier Score:</strong> 0.12
+            <div style="grid-column: 1 / -1;">
+              No validated scores yet. The figures that used to sit here
+              (F1 0.867, precision 93%, recall 81%) were withdrawn: the
+              scoring function counted every sampled timestamp as a positive
+              forecast regardless of what the model predicted, and used the
+              model's full 168h range instead of a stated horizon. The 93%
+              was the base rate of the test window, not a property of the
+              model.
             </div>
           </div>
           <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.5rem;">
-            <strong>Training Data:</strong> 13 days of observations (Oct 28 - Nov 14, 2025)<br/>
-            <strong>M-class Events:</strong> 9 flares<br/>
+            <strong>Training Data:</strong> 13 days of observations (Oct 28 to Nov 10, 2025)<br/>
+            <strong>M-class Events:</strong> 8 flares<br/>
             <strong>Model Type:</strong> Cox Proportional Hazards<br/>
-            <strong>Evaluation:</strong> Time-based cross-validation
+            <strong>Scoring:</strong> rewritten, see src/models/backtest_scoring.py
           </div>
           <button 
             on:click={() => showBacktestReport = false}
@@ -1378,13 +1375,13 @@
           </div>
           <div class="item">
             <div class="label">Model Performance</div>
-            <div class="value" style="color: #10b981; font-weight: 600;">
+            <div class="value" style="color: #fbbf24; font-weight: 600;">
               <button 
                 on:click={() => showBacktestReport = !showBacktestReport}
-                style="background: none; border: none; color: #10b981; text-decoration: underline; cursor: pointer; padding: 0; font-weight: inherit; font-size: inherit;"
+                style="background: none; border: none; color: #fbbf24; text-decoration: underline; cursor: pointer; padding: 0; font-weight: inherit; font-size: inherit;"
               >
-                F1: 0.867
-              </button>, Precision: 93%, Recall: 81%
+                not yet validated
+              </button>
             </div>
             <small>M-class survival model metrics</small>
           </div>
