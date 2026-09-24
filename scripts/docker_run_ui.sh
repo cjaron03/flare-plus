@@ -39,10 +39,67 @@ if [ ! -d "${STATIC_DIR}" ]; then
 fi
 
 echo "starting ui dashboard on ${HOST}:${PORT} (api=${API_URL}, static=${STATIC_DIR})"
-exec python scripts/run_ui.py \
-  --api-url "${API_URL}" \
-  --host "${HOST}" \
-  --port "${PORT}" \
-  --static-dir "${STATIC_DIR}" \
-  ${CLASS_ARG} \
-  ${SURV_ARG}
+
+ERROR_LOG="/tmp/flare_ui_start.err"
+CHILD_PID=""
+
+forward_signal() {
+  if [ -n "${CHILD_PID}" ]; then
+    kill "-$1" "${CHILD_PID}" 2>/dev/null || true
+  fi
+}
+
+run_ui_server() {
+  python scripts/run_ui.py \
+    --api-url "${API_URL}" \
+    --host "${HOST}" \
+    --port "${PORT}" \
+    --static-dir "${STATIC_DIR}" \
+    ${CLASS_ARG} \
+    ${SURV_ARG} \
+    2>"${ERROR_LOG}" &
+  CHILD_PID=$!
+
+  trap 'forward_signal TERM' TERM
+  trap 'forward_signal INT' INT
+
+  if wait "${CHILD_PID}"; then
+    trap - TERM INT
+    CHILD_PID=""
+    return 0
+  fi
+
+  status=$?
+  trap - TERM INT
+  CHILD_PID=""
+  return "${status}"
+}
+
+if run_ui_server; then
+  exit 0
+fi
+status=$?
+
+if grep -q "Resource deadlock avoided" "${ERROR_LOG}" 2>/dev/null; then
+  echo "detected bind-mount file lock, retrying ui from runtime copy"
+  RUNTIME_ROOT="/tmp/flare-runtime-ui"
+  rm -rf "${RUNTIME_ROOT}"
+  mkdir -p "${RUNTIME_ROOT}"
+  cp -R /app/src "${RUNTIME_ROOT}/src"
+  cp -R /app/scripts "${RUNTIME_ROOT}/scripts"
+  if [ -f /app/config.yaml ]; then
+    cp /app/config.yaml "${RUNTIME_ROOT}/config.yaml"
+  fi
+  export PYTHONPATH="${RUNTIME_ROOT}"
+  cd "${RUNTIME_ROOT}"
+  exec python scripts/run_ui.py \
+    --api-url "${API_URL}" \
+    --host "${HOST}" \
+    --port "${PORT}" \
+    --static-dir "${STATIC_DIR}" \
+    ${CLASS_ARG} \
+    ${SURV_ARG}
+fi
+
+cat "${ERROR_LOG}" >&2
+exit "${status}"

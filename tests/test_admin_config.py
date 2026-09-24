@@ -11,6 +11,8 @@ from src.config import AdminConfig
 def reset_admin_config(monkeypatch):
     """ensure AdminConfig session state is reset between tests."""
     monkeypatch.setattr(AdminConfig, "_session_granted", False)
+    monkeypatch.setattr(AdminConfig, "DEV_USERNAME", "testadmin")
+    monkeypatch.setattr(AdminConfig, "DEV_PASSWORD", "testpass")
     AdminConfig.revoke_session_access()
     AdminConfig._failed_attempts = []
     AdminConfig._locked_until = 0.0
@@ -33,7 +35,7 @@ def test_admin_login_flow(monkeypatch):
     assert success is False
     assert AdminConfig.has_access() is False
 
-    success, message = AdminConfig.validate_credentials("plncake", "12345")
+    success, message = AdminConfig.validate_credentials("testadmin", "testpass")
     assert success is True
     assert "successful" in message.lower()
     assert AdminConfig.has_access() is True
@@ -47,7 +49,7 @@ def test_admin_login_toggle(monkeypatch):
     """UI login can be globally disabled."""
     monkeypatch.setattr(AdminConfig, "LOGIN_ENABLED", False)
 
-    success, message = AdminConfig.validate_credentials("plncake", "12345")
+    success, message = AdminConfig.validate_credentials("testadmin", "testpass")
     assert success is False
     assert "disabled" in message.lower()
 
@@ -65,10 +67,21 @@ def test_admin_login_rate_limit(monkeypatch):
 
     AdminConfig.validate_credentials("wrong", "bad")
     AdminConfig.validate_credentials("wrong", "bad")
-    success, message = AdminConfig.validate_credentials("plncake", "12345")
+    success, message = AdminConfig.validate_credentials("testadmin", "testpass")
     assert success is False
     assert "try again" in message.lower()
 
     AdminConfig._locked_until = time.time() - 1
-    success, _ = AdminConfig.validate_credentials("plncake", "12345")
+    success, _ = AdminConfig.validate_credentials("testadmin", "testpass")
     assert success is True
+
+
+def test_admin_login_rejects_empty_credentials(monkeypatch):
+    """login fails with helpful message when env vars are not configured."""
+    monkeypatch.setattr(AdminConfig, "DEV_USERNAME", "")
+    monkeypatch.setattr(AdminConfig, "DEV_PASSWORD", "")
+    monkeypatch.setattr(AdminConfig, "LOGIN_ENABLED", True)
+
+    success, message = AdminConfig.validate_credentials("admin", "pass")
+    assert success is False
+    assert "not configured" in message.lower()

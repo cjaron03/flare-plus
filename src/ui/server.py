@@ -396,12 +396,14 @@ def create_app(
     state = UIState(api_url, classification_model_path, survival_model_path)
 
     app = FastAPI(title="Flare+ UI Backend", version="1.0.0")
+    # restrict CORS to configured origins (defaults to localhost for development)
+    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:7860,http://127.0.0.1:7860").split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[o.strip() for o in allowed_origins if o.strip()],
         allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key"],
     )
 
     assets_dir = None

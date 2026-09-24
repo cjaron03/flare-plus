@@ -1,6 +1,7 @@
 """API authentication for flare+ model serving."""
 
 import hashlib
+import hmac
 import logging
 import os
 from functools import wraps
@@ -67,10 +68,10 @@ def require_api_key(f):
             logger.warning(f"Missing API key for {request.method} {request.path} " f"from {request.remote_addr}")
             return jsonify({"error": "Missing API key", "message": "Provide API key in X-API-Key header"}), 401
 
-        # Hash the provided key and compare
+        # Hash the provided key and compare using constant-time comparison
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
-        if key_hash not in _VALID_KEY_HASHES:
+        if not any(hmac.compare_digest(key_hash, valid) for valid in _VALID_KEY_HASHES):
             logger.warning(f"Invalid API key for {request.method} {request.path} " f"from {request.remote_addr}")
             return jsonify({"error": "Invalid API key", "message": "The provided API key is not valid"}), 401
 

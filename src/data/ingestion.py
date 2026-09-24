@@ -1,6 +1,7 @@
 """main data ingestion orchestration."""
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
@@ -40,8 +41,9 @@ class DataIngestionPipeline:
 
     def _init_donki_fetcher(self) -> Optional[DonkiFetcher]:
         """initialize donki fetcher if nasa api key is configured."""
-        api_key = DataConfig.NASA_API_KEY
-        if not api_key or api_key == "DEMO_KEY":
+        # resolve at runtime so tests/env overrides are honored.
+        api_key = os.getenv("NASA_API_KEY", DataConfig.NASA_API_KEY)
+        if not api_key or api_key.strip().upper() == "DEMO_KEY":
             logger.info("NASA_API_KEY not configured, DONKI integration disabled")
             return None
         logger.info("DONKI integration enabled")

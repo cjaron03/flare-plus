@@ -19,7 +19,7 @@
 
   // classification form
   let windowHours = 24;
-  let modelType = "gradient_boosting";
+  let modelType = "best";
   let classificationStatus = "";
   let classificationResult = null;
   let classificationLoading = false;
@@ -251,8 +251,11 @@
           <label>
             Model type
             <select bind:value={modelType}>
+              <option value="best">Best (auto-selected)</option>
               <option value="logistic">Logistic regression</option>
               <option value="gradient_boosting">Gradient boosting</option>
+              <option value="lightgbm">LightGBM</option>
+              <option value="random_forest">Random forest</option>
             </select>
             <small>Machine learning model to use</small>
           </label>

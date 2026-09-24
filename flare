@@ -335,6 +335,208 @@ case "$1" in
     docker compose exec app python scripts/backtest_historical.py "$@"
     ;;
 
+  benchmark-noaa)
+    shift  # remove subcommand
+    print_header "NOAA vs flare+ Benchmark"
+    docker compose exec app python scripts/benchmark_noaa_models.py "$@"
+    ;;
+
+  monitor-noaa)
+    shift  # remove subcommand
+    print_header "Realtime NOAA vs flare+ Monitor"
+    docker compose exec app python scripts/monitor_noaa_realtime.py "$@"
+    ;;
+
+  monitor-noaa-bg)
+    shift  # remove subcommand
+    LOG_PATH="scripts/runtime/noaa_realtime_daemon.log"
+    CSV_PATH="scripts/runtime/noaa_realtime_monitor.csv"
+    mkdir -p scripts/runtime
+
+    RUNNING_COUNT=$(docker compose exec -T app python - <<'PY'
+import os
+
+target = "scripts/monitor_noaa_realtime.py --daemon"
+count = 0
+for entry in os.listdir("/proc"):
+    if not entry.isdigit():
+        continue
+    cmdline_path = f"/proc/{entry}/cmdline"
+    try:
+        raw = open(cmdline_path, "rb").read()
+    except Exception:
+        continue
+    cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    if target in cmd:
+        count += 1
+print(count)
+PY
+)
+    if [ "${RUNNING_COUNT}" -gt 0 ]; then
+      print_info "Realtime monitor already running in app container"
+      print_info "Logs: ${LOG_PATH}"
+      exit 0
+    fi
+
+    print_header "Starting Realtime NOAA Monitor (Background)"
+    docker compose exec -d app python scripts/monitor_noaa_realtime.py --daemon --log-file "$LOG_PATH" --csv-path "$CSV_PATH" "$@"
+    print_success "Realtime monitor started"
+    print_info "Logs: ${LOG_PATH}"
+    print_info "CSV: ${CSV_PATH}"
+    print_info "Stop with: ./flare monitor-noaa-stop"
+    ;;
+
+  monitor-noaa-stop)
+    LOG_PATH="scripts/runtime/noaa_realtime_daemon.log"
+    STOPPED_COUNT=$(docker compose exec -T app python - <<'PY'
+import os
+import signal
+
+target = "scripts/monitor_noaa_realtime.py --daemon"
+stopped = 0
+for entry in os.listdir("/proc"):
+    if not entry.isdigit():
+        continue
+    pid = int(entry)
+    cmdline_path = f"/proc/{entry}/cmdline"
+    try:
+        raw = open(cmdline_path, "rb").read()
+    except Exception:
+        continue
+    cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    if target in cmd:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped += 1
+        except Exception:
+            continue
+print(stopped)
+PY
+)
+    print_success "Sent stop signal to ${STOPPED_COUNT} realtime monitor process(es) in app container"
+    print_info "Log file remains at ${LOG_PATH}"
+    ;;
+
+  monitor-noaa-logs)
+    LOG_PATH="scripts/runtime/noaa_realtime_daemon.log"
+    if [ ! -f "$LOG_PATH" ]; then
+      print_error "No realtime monitor log file found (${LOG_PATH})"
+      exit 1
+    fi
+    print_header "Realtime NOAA Monitor Logs"
+    print_info "Press Ctrl+C to exit"
+    tail -f "$LOG_PATH"
+    ;;
+
+  monitor-noaa-report)
+    shift  # remove subcommand
+    print_header "Realtime NOAA vs flare+ Metrics Report"
+    docker compose exec app python scripts/noaa_realtime_report.py "$@"
+    ;;
+
+  monitor-noaa-status)
+    shift  # remove subcommand
+    print_header "Realtime NOAA vs flare+ Status"
+    docker compose exec app python scripts/noaa_realtime_status.py "$@"
+    ;;
+
+  monitor-noaa-watchdog)
+    shift  # remove subcommand
+    print_header "Realtime NOAA Monitor Watchdog"
+    docker compose exec app python scripts/noaa_realtime_watchdog.py "$@"
+    ;;
+
+  monitor-noaa-watchdog-bg)
+    shift  # remove subcommand
+    WATCHDOG_LOG_PATH="scripts/runtime/noaa_realtime_watchdog.log"
+    mkdir -p scripts/runtime
+
+    RUNNING_COUNT=$(docker compose exec -T app python - <<'PY'
+import os
+
+target = "scripts/noaa_realtime_watchdog.py --daemon"
+count = 0
+for entry in os.listdir("/proc"):
+    if not entry.isdigit():
+        continue
+    cmdline_path = f"/proc/{entry}/cmdline"
+    try:
+        raw = open(cmdline_path, "rb").read()
+    except Exception:
+        continue
+    cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    if target in cmd:
+        count += 1
+print(count)
+PY
+)
+    if [ "${RUNNING_COUNT}" -gt 0 ]; then
+      print_info "Realtime watchdog already running in app container"
+      print_info "Logs: ${WATCHDOG_LOG_PATH}"
+      exit 0
+    fi
+
+    print_header "Starting Realtime NOAA Watchdog (Background)"
+    docker compose exec -d app python scripts/noaa_realtime_watchdog.py --daemon --watchdog-log-file "$WATCHDOG_LOG_PATH" "$@"
+    print_success "Realtime watchdog started"
+    print_info "Logs: ${WATCHDOG_LOG_PATH}"
+    print_info "Stop with: ./flare monitor-noaa-watchdog-stop"
+    ;;
+
+  monitor-noaa-watchdog-stop)
+    WATCHDOG_LOG_PATH="scripts/runtime/noaa_realtime_watchdog.log"
+    STOPPED_COUNT=$(docker compose exec -T app python - <<'PY'
+import os
+import signal
+
+target = "scripts/noaa_realtime_watchdog.py --daemon"
+stopped = 0
+for entry in os.listdir("/proc"):
+    if not entry.isdigit():
+        continue
+    pid = int(entry)
+    cmdline_path = f"/proc/{entry}/cmdline"
+    try:
+        raw = open(cmdline_path, "rb").read()
+    except Exception:
+        continue
+    cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
+    if target in cmd:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped += 1
+        except Exception:
+            continue
+print(stopped)
+PY
+)
+    print_success "Sent stop signal to ${STOPPED_COUNT} realtime watchdog process(es) in app container"
+    print_info "Log file remains at ${WATCHDOG_LOG_PATH}"
+    ;;
+
+  monitor-noaa-watchdog-logs)
+    WATCHDOG_LOG_PATH="scripts/runtime/noaa_realtime_watchdog.log"
+    if [ ! -f "$WATCHDOG_LOG_PATH" ]; then
+      print_error "No realtime watchdog log file found (${WATCHDOG_LOG_PATH})"
+      exit 1
+    fi
+    print_header "Realtime NOAA Watchdog Logs"
+    print_info "Press Ctrl+C to exit"
+    tail -f "$WATCHDOG_LOG_PATH"
+    ;;
+
+  monitor-noaa-maintain)
+    shift  # remove subcommand
+    print_header "Realtime NOAA Runtime Maintenance"
+    docker compose exec app python scripts/noaa_realtime_runtime_maintenance.py "$@"
+    ;;
+
+  monitor-noaa-staleness)
+    shift  # remove subcommand
+    print_header "Realtime NOAA Staleness Check"
+    docker compose exec app python scripts/noaa_realtime_staleness_check.py "$@"
+    ;;
+
   validate)
     print_header "System Validation"
     docker compose exec app python scripts/validate_system.py
@@ -384,6 +586,12 @@ case "$1" in
     fi
     ;;
 
+  ingest-ncei)
+    shift  # remove subcommand
+    print_header "NCEI Historical XRS Backfill"
+    docker compose exec app python scripts/download_ncei_historical.py "$@"
+    ;;
+
   *)
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE} flare+ development helper${NC}"
@@ -406,6 +614,7 @@ case "$1" in
     echo -e "${YELLOW}Database:${NC}"
     echo -e "  ${GREEN}init-db${NC}      Initialize database schema"
     echo -e "  ${GREEN}ingest${NC}       Run data ingestion from NOAA"
+    echo -e "  ${GREEN}ingest-ncei${NC} [args]  Backfill historical GOES XRS from NCEI archive"
     echo -e "  ${GREEN}import-donki${NC} [START] [END] [API_KEY]  Import historical flares from NASA DONKI"
     echo -e "  ${GREEN}db-shell${NC}     Open psql shell"
     echo ""
@@ -424,6 +633,19 @@ case "$1" in
     echo -e "  ${GREEN}validate-model${NC} <path>  Validate specific model"
     echo -e "  ${GREEN}check-config${NC} Check environment configuration"
     echo -e "  ${GREEN}backtest${NC}     Run historical backtest"
+    echo -e "  ${GREEN}benchmark-noaa${NC} [args]  Benchmark flare+ vs NOAA/SWPC probabilities"
+    echo -e "  ${GREEN}monitor-noaa${NC} [args]  Run one realtime NOAA-vs-flare monitor cycle"
+    echo -e "  ${GREEN}monitor-noaa-bg${NC} [args]  Run realtime monitor daemon in background"
+    echo -e "  ${GREEN}monitor-noaa-stop${NC}  Stop realtime monitor daemon"
+    echo -e "  ${GREEN}monitor-noaa-logs${NC}  Tail realtime monitor daemon logs"
+    echo -e "  ${GREEN}monitor-noaa-report${NC} [args]  Show NOAA-vs-flare metrics report"
+    echo -e "  ${GREEN}monitor-noaa-status${NC} [args]  Show realtime monitor status"
+    echo -e "  ${GREEN}monitor-noaa-watchdog${NC} [args]  One-shot watchdog check/restart"
+    echo -e "  ${GREEN}monitor-noaa-watchdog-bg${NC} [args]  Run watchdog daemon in background"
+    echo -e "  ${GREEN}monitor-noaa-watchdog-stop${NC}  Stop watchdog daemon"
+    echo -e "  ${GREEN}monitor-noaa-watchdog-logs${NC}  Tail watchdog logs"
+    echo -e "  ${GREEN}monitor-noaa-maintain${NC} [args]  Prune/trim realtime runtime files"
+    echo -e "  ${GREEN}monitor-noaa-staleness${NC} [args]  Exit non-zero if realtime rows are stale"
     echo ""
     echo -e "${YELLOW}Quick Start:${NC}"
     echo -e "  ${GRAY}./flare up${NC}         # Start everything"

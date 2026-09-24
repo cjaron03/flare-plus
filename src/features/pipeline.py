@@ -259,6 +259,15 @@ class FeatureEngineer:
             features["region_number"] = region_number
 
         # 1. complexity features from solar regions
+        # start with stable defaults so inference rows always have a complete schema
+        features.update(compute_mcintosh_complexity(None))
+        features.update(compute_mount_wilson_complexity(None))
+        features.update(compute_magnetic_complexity_score(None, None))
+        features["region_area"] = None
+        features["region_num_sunspots"] = None
+        features["region_latitude"] = None
+        features["region_longitude"] = None
+
         if len(data["regions"]) > 0:
             if region_number is not None:
                 region_data = data["regions"][data["regions"]["region_number"] == region_number]
@@ -292,31 +301,29 @@ class FeatureEngineer:
                 features["region_longitude"] = region.get("longitude")
 
         # 2. flux trend features
-        if len(data["flux"]) > 0:
-            flux_features = compute_flux_trends(data["flux"], timestamp, lookback_hours=24, window_hours=6)
-            features.update(flux_features)
+        flux_features = compute_flux_trends(data["flux"], timestamp, lookback_hours=24, window_hours=6)
+        features.update(flux_features)
 
-            flux_rate_features = compute_flux_rate_of_change(data["flux"], timestamp, lookback_hours=12)
-            features.update(flux_rate_features)
+        flux_rate_features = compute_flux_rate_of_change(data["flux"], timestamp, lookback_hours=12)
+        features.update(flux_rate_features)
 
-            # rolling statistics for flux
-            for window in self.rolling_windows:
-                flux_rolling = compute_rolling_statistics(
-                    data["flux"], timestamp, "flux_short", [window], ["mean", "max", "std"]
-                )
-                features.update(flux_rolling)
+        # rolling statistics for flux
+        for window in self.rolling_windows:
+            flux_rolling = compute_rolling_statistics(
+                data["flux"], timestamp, "flux_short", [window], ["mean", "max", "std"]
+            )
+            features.update(flux_rolling)
 
-                flux_rolling_long = compute_rolling_statistics(
-                    data["flux"], timestamp, "flux_long", [window], ["mean", "max", "std"]
-                )
-                features.update(flux_rolling_long)
+            flux_rolling_long = compute_rolling_statistics(
+                data["flux"], timestamp, "flux_long", [window], ["mean", "max", "std"]
+            )
+            features.update(flux_rolling_long)
 
         # 3. recency-weighted flare counts
-        if len(data["flares"]) > 0:
-            flare_counts = compute_recency_weighted_flare_counts(
-                data["flares"], timestamp, self.flare_classes, self.rolling_windows
-            )
-            features.update(flare_counts)
+        flare_counts = compute_recency_weighted_flare_counts(
+            data["flares"], timestamp, self.flare_classes, self.rolling_windows
+        )
+        features.update(flare_counts)
 
         # convert to dataframe
         # replace None with np.nan to ensure proper numeric dtype inference

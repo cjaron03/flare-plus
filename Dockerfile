@@ -88,6 +88,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 # copy application code with proper ownership
 COPY --chown=flareuser:flareuser src/ ./src/
+COPY --chown=flareuser:flareuser flare_plus/ ./flare_plus/
 COPY --chown=flareuser:flareuser scripts/ ./scripts/
 COPY --chown=flareuser:flareuser pyproject.toml ./
 # copy config.yaml if it exists (optional - code has defaults via load_config)

@@ -161,11 +161,11 @@ def handle_missing_data(
     is_single_row = len(features_processed) == 1
 
     if strategy == "forward_fill":
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="bfill")  # fill remaining
+        features_processed[numeric_cols] = features_processed[numeric_cols].ffill()
+        features_processed[numeric_cols] = features_processed[numeric_cols].bfill()  # fill remaining
     elif strategy == "backward_fill":
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="bfill")
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")  # fill remaining
+        features_processed[numeric_cols] = features_processed[numeric_cols].bfill()
+        features_processed[numeric_cols] = features_processed[numeric_cols].ffill()  # fill remaining
     elif strategy == "mean":
         mean_vals = features_processed[numeric_cols].mean()
         # for single-row frames or all-NaN columns, use 0 as fallback to maintain schema
@@ -195,8 +195,8 @@ def handle_missing_data(
             features_processed = features_processed.dropna()
     else:
         logger.warning(f"unknown strategy: {strategy}, using forward_fill")
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="ffill")
-        features_processed[numeric_cols] = features_processed[numeric_cols].fillna(method="bfill")
+        features_processed[numeric_cols] = features_processed[numeric_cols].ffill()
+        features_processed[numeric_cols] = features_processed[numeric_cols].bfill()
 
     # fill any remaining missing values (fallback for edge cases)
     # this ensures single-row frames always have complete schema

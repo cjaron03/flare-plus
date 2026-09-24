@@ -41,7 +41,7 @@ class PredictionService:
         self,
         timestamp: datetime,
         window: int = 24,
-        model_type: str = "gradient_boosting",
+        model_type: str = "best",
         region_number: Optional[int] = None,
         include_explanation: bool = False,
     ) -> Dict[str, Any]:
@@ -51,7 +51,7 @@ class PredictionService:
         args:
             timestamp: observation timestamp
             window: prediction window in hours (24 or 48)
-            model_type: model type ('logistic' or 'gradient_boosting')
+            model_type: model type ('best', 'logistic', 'gradient_boosting', etc.)
             region_number: optional region number
             include_explanation: whether to include SHAP explanation
 

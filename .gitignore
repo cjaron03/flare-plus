@@ -48,6 +48,9 @@ models/artifacts/
 logs/
 *.log
 .vite.log
+scripts/runtime/*.log
+scripts/runtime/*.csv
+scripts/runtime/*.json
 
 # testing
 .pytest_cache/
